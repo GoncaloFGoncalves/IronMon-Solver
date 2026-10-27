@@ -1,0 +1,701 @@
+<title>Kaizo Solver</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: barra de checkpoints fixa no topo, dois paineis lado a lado que
+   empilham no telemovel -- a tabela a esquerda, o mon escolhido a direita. */
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --panel-2: #eceef1;
+  --line: #d6dae0;
+  --fg: #16181d;
+  --fg-dim: #5c6472;
+  --fg-faint: #8b93a1;
+  --accent: #c2410c;
+  --accent-soft: #fde8dc;
+  --good: #11704a;
+  --good-soft: #d6efe2;
+  --warn: #8a5a00;
+  --warn-soft: #faeccc;
+  --bad: #a3182b;
+  --bad-soft: #fadfe3;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Public Sans", -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101216; --panel: #181b21; --panel-2: #1f232b; --line: #2d323c;
+    --fg: #e9ecf1; --fg-dim: #9aa3b2; --fg-faint: #6b7483;
+    --accent: #f97316; --accent-soft: #3a2111;
+    --good: #4ade80; --good-soft: #10291d;
+    --warn: #fbbf24; --warn-soft: #2e2410;
+    --bad: #f87171; --bad-soft: #31161a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101216; --panel: #181b21; --panel-2: #1f232b; --line: #2d323c;
+  --fg: #e9ecf1; --fg-dim: #9aa3b2; --fg-faint: #6b7483;
+  --accent: #f97316; --accent-soft: #3a2111;
+  --good: #4ade80; --good-soft: #10291d;
+  --warn: #fbbf24; --warn-soft: #2e2410;
+  --bad: #f87171; --bad-soft: #31161a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body);
+  font-size: 14px; line-height: 1.5; margin: 0;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+h1 {
+  font-family: var(--display); font-weight: 700; font-size: 1.55rem;
+  letter-spacing: -0.02em; margin: 0; text-wrap: balance;
+}
+.lede { color: var(--fg-dim); margin: 6px 0 0; max-width: 62ch; }
+header.top { padding-block: 24px 16px; }
+.meta { font-family: var(--mono); font-size: 11px; color: var(--fg-faint); margin-top: 10px; }
+
+/* ---- barra de checkpoints ---- */
+.rail {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+  margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 8px; overflow-x: auto;
+}
+.rail-inner { display: flex; gap: 6px; min-width: max-content; }
+.cp {
+  font-family: var(--body); font-size: 12px; cursor: pointer;
+  background: var(--panel); color: var(--fg-dim);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 10px; text-align: left; line-height: 1.25; white-space: nowrap;
+}
+.cp:hover { border-color: var(--fg-faint); }
+.cp[aria-pressed="true"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--fg);
+}
+.cp b { display: block; font-family: var(--display); font-weight: 600;
+        font-size: 13px; letter-spacing: 0.01em; text-transform: capitalize; }
+.cp .lv { font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); }
+.cp[aria-pressed="true"] .lv { color: var(--accent); }
+.cp.danger b::after {
+  content: "!"; color: var(--bad); font-weight: 700; margin-left: 4px;
+}
+
+/* ---- controlos ---- */
+.controls {
+  display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end;
+  padding-block: 16px; border-bottom: 1px solid var(--line);
+}
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field > label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--fg-faint); font-weight: 600;
+}
+select, input[type="range"] {
+  font: inherit; font-size: 13px; color: var(--fg);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 5px; padding: 5px 8px; min-width: 0;
+}
+input[type="range"] { padding: 0; width: 150px; accent-color: var(--accent); }
+.bstval { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 12px; cursor: pointer; padding: 5px 10px;
+  background: var(--panel); color: var(--fg-dim); border: 0;
+  border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
+
+/* ---- paineis ---- */
+.panels { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; padding-block: 20px; }
+@media (max-width: 860px) { .panels { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.panel > h2 {
+  font-family: var(--display); font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--fg-dim);
+  margin: 0; padding: 12px 14px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.panel > h2 span { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0; color: var(--fg-faint); text-transform: none; font-weight: 400; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--fg-faint); font-weight: 600; position: sticky; top: 0;
+  background: var(--panel);
+}
+th[data-sort] { cursor: pointer; user-select: none; }
+th.sorted { color: var(--accent); }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr[data-s] { cursor: pointer; }
+tbody tr[data-s]:hover { background: var(--panel-2); }
+tbody tr[aria-selected="true"] { background: var(--accent-soft); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.rank { font-family: var(--mono); color: var(--fg-faint); text-align: right; width: 1%; }
+.name { font-weight: 600; text-transform: capitalize; }
+.types { font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); }
+.prof { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+.pill {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  padding: 1px 6px; border-radius: 999px; font-weight: 500;
+}
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.empty { padding: 28px 14px; color: var(--fg-faint); text-align: center; white-space: normal; }
+.more { padding: 10px 14px; border-top: 1px solid var(--line); }
+.more button {
+  font: inherit; font-size: 12px; cursor: pointer; color: var(--accent);
+  background: none; border: 0; padding: 0;
+}
+
+/* ---- inspector ---- */
+.pick { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--line); }
+.pick .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick .row .field { flex: 1 1 110px; }
+.pick select { width: 100%; }
+.verdict { padding: 14px; border-bottom: 1px solid var(--line); }
+.verdict strong { font-family: var(--display); font-size: 1.05rem; text-transform: capitalize; }
+.verdict p { margin: 6px 0 0; color: var(--fg-dim); font-size: 13px; }
+.chart { padding: 12px 10px 2px; }
+.chart svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.legend { display: flex; gap: 14px; padding: 2px 14px 12px; font-size: 11px; color: var(--fg-dim); font-family: var(--mono); }
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+/* ---- moveset ao vivo ---- */
+.moveset { margin-bottom: 24px; }
+.moveset .note { margin: 0; padding: 12px 14px 0; color: var(--fg-dim); font-size: 13px; max-width: 78ch; }
+.slots { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; }
+.slots select { flex: 1 1 180px; min-width: 0; }
+.msfoot {
+  display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: flex-end;
+  padding: 14px; border-top: 1px solid var(--line);
+}
+.big { display: flex; flex-direction: column; gap: 2px; }
+.big .lab { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-faint); font-weight: 600; }
+.big b { font-family: var(--mono); font-size: 1.5rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.big .vs { font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
+.timing { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
+.delta { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.delta.up { color: var(--good); }
+.delta.flat { color: var(--fg-faint); }
+footer { color: var(--fg-dim); font-size: 12.5px; padding-block: 20px 0; border-top: 1px solid var(--line); }
+footer p { margin: 0 0 8px; max-width: 78ch; }
+footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Kaizo Solver</h1>
+    <p class="lede">Camada 0 da run: cada espécie, em cada um dos 27 perfis de stats e 3 bandas de IV, contra o pool inteiro de 386 adversários, nos 9 checkpoints.</p>
+    <p class="meta" id="meta"></p>
+  </header>
+
+  <nav class="rail" aria-label="Checkpoints"><div class="rail-inner" id="rail"></div></nav>
+
+  <div class="controls">
+    <div class="field">
+      <label for="bst">BST máximo</label>
+      <input type="range" id="bst" min="200" max="780" step="5" value="550">
+    </div>
+    <div class="field"><label for="bst">Limite</label><span class="bstval" id="bstval"></span></div>
+    <div class="field">
+      <label for="band">Banda de IV</label>
+      <select id="band"></select>
+    </div>
+    <div class="field">
+      <label for="off">Ofensivo</label>
+      <select id="off"></select>
+    </div>
+    <div class="field">
+      <label for="def">Defensivo</label>
+      <select id="def"></select>
+    </div>
+    <div class="field">
+      <label for="tempo">Tempo</label>
+      <select id="tempo"></select>
+    </div>
+    <div class="field">
+      <label for="metric">Ordenar por</label>
+      <div class="seg" id="metric">
+        <button type="button" data-metric="auto" aria-pressed="true">Automático</button>
+        <button type="button" data-metric="win" aria-pressed="false">Vitória</button>
+        <button type="button" data-metric="hp" aria-pressed="false">HP</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <section class="panel">
+      <h2>Ranking <span id="rankNote"></span></h2>
+      <div class="scroll"><table id="rank">
+        <thead><tr>
+          <th class="rank">#</th><th>Mon</th><th class="num">BST</th><th>Perfil</th>
+          <th class="num" data-sort="win">Vitória</th>
+          <th class="num" data-sort="hp">HP</th>
+          <th class="num">Moves</th>
+        </tr></thead>
+        <tbody id="rankBody"></tbody>
+      </table></div>
+      <div class="more" id="more" hidden><button type="button" id="moreBtn"></button></div>
+    </section>
+
+    <section class="panel">
+      <h2>O teu mon <span>lookup directo</span></h2>
+      <div class="pick">
+        <div class="field">
+          <label for="pickSpecies">Espécie</label>
+          <select id="pickSpecies"></select>
+        </div>
+        <div class="row">
+          <div class="field"><label for="pickOff">Ofensivo</label><select id="pickOff"></select></div>
+          <div class="field"><label for="pickDef">Defensivo</label><select id="pickDef"></select></div>
+          <div class="field"><label for="pickTempo">Tempo</label><select id="pickTempo"></select></div>
+          <div class="field"><label for="pickBand">IV</label><select id="pickBand"></select></div>
+        </div>
+      </div>
+      <div class="verdict" id="verdict"></div>
+      <div class="chart" id="chart"></div>
+      <div class="legend">
+        <span><i class="key" style="background:var(--accent)"></i>vitória</span>
+        <span><i class="key" style="background:var(--fg-dim)"></i>HP que sobra</span>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>Checkpoint</th><th class="num">Nível</th><th class="num">Vitória</th><th class="num">HP</th></tr></thead>
+        <tbody id="runBody"></tbody>
+      </table></div>
+    </section>
+  </div>
+
+  <section class="panel moveset">
+    <h2>Moveset concreto <span id="msWhere"></span></h2>
+    <p class="note">A tabela acima assume moves aleatórios. Aqui escolhes os quatro e o cálculo corre na hora, contra os mesmos 10 422 adversários. Troca um slot e vê os dois números mexerem.</p>
+    <div class="slots" id="slots"></div>
+    <div class="scroll"><table>
+      <thead><tr><th>Slot</th><th>Move</th><th class="num">BP</th><th class="num">PP</th><th class="num">Impacto se sair</th></tr></thead>
+      <tbody id="msBody"></tbody>
+    </table></div>
+    <div class="msfoot">
+      <div class="big">
+        <span class="lab">Vitória</span>
+        <b id="msWin">—</b>
+        <span class="vs" id="msWinVs"></span>
+      </div>
+      <div class="big">
+        <span class="lab">HP que sobra</span>
+        <b id="msHp">—</b>
+        <span class="vs" id="msHpVs"></span>
+      </div>
+      <div class="timing" id="msTime"></div>
+    </div>
+  </section>
+
+  <footer>
+    <p><b>Vitória</b> é a probabilidade de ganhar a troca, em média sobre os 386 adversários ao nível daquele checkpoint. <b>HP</b> é a fracção do teu máximo com que ficas quando ganhas, e é a moeda da dungeon, onde não há cura nem recarga de PP.</p>
+    <p>Com vantagem de nível a vitória satura: na Erika quase tudo dá 1.000 e só o HP ordena. Por isso <b>Automático</b> ordena por vitória no Brock e no Elite 4, os dois checkpoints onde se perde, e por HP nos outros sete.</p>
+    <p>O limite de BST por omissão é 550: acima disso o mon não pode ser teu, só adversário. Carrega numa linha do ranking para a abrir no painel do lado.</p>
+    <p>Gerado de <code>data/camada0</code>, 180 partições.</p>
+  </footer>
+</div>
+
+<script>
+/*__ENGINE__*/
+const DATA = /*__DATA__*/null;
+
+function decode(encoded) {
+  const bin = atob(encoded);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Uint16Array(bytes.buffer);
+}
+
+const WIN = decode(DATA.win);
+const HP = decode(DATA.hp);
+const CPS = DATA.checkpoints;
+const S = DATA.species.length;
+const B = DATA.bands.length;
+const P = DATA.profiles.length;
+const SCALE = DATA.scale;
+const DANGER = new Set(["brock", "elite-4"]);
+const OFF = [...new Set(DATA.profiles.map(p => p[0]))];
+const DEF = [...new Set(DATA.profiles.map(p => p[1]))];
+const TEMPO = [...new Set(DATA.profiles.map(p => p[2]))];
+
+const cellIndex = (c, s, b, p) => ((c * S + s) * B + b) * P + p;
+const show = (v) => (v / SCALE).toFixed(3);
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  cp: 0, bst: 550, band: 2, off: "", def: "", tempo: "",
+  metric: "auto", limit: 40,
+  pick: { s: 142, off: OFF[0], def: DEF[0], tempo: TEMPO[0], band: 2 },
+  moves: ["body-slam", "surf", "earthquake", "ice-beam"],
+};
+
+const metricNow = () => state.metric !== "auto" ? state.metric
+  : (DANGER.has(CPS[state.cp].name) ? "win" : "hp");
+
+function profileIndex(off, def, tempo) {
+  return DATA.profiles.findIndex(p => p[0] === off && p[1] === def && p[2] === tempo);
+}
+
+function fill(el, items, any) {
+  el.innerHTML = "";
+  if (any) el.append(new Option(any, ""));
+  for (const [value, label] of items) el.append(new Option(label, value));
+}
+
+function buildRail() {
+  const rail = $("rail");
+  rail.innerHTML = "";
+  CPS.forEach((cp, i) => {
+    const lead = cp.level - cp.opponent;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cp" + (DANGER.has(cp.name) ? " danger" : "");
+    button.setAttribute("aria-pressed", String(i === state.cp));
+    const name = document.createElement("b");
+    name.textContent = cp.name;
+    const level = document.createElement("span");
+    level.className = "lv";
+    level.textContent = "lv " + cp.level + " vs " + cp.opponent + " · " + (lead >= 0 ? "+" : "") + lead;
+    button.append(name, level);
+    button.onclick = () => { state.cp = i; state.limit = 40; render(); };
+    rail.append(button);
+  });
+}
+
+function ranked() {
+  const metric = metricNow();
+  const out = [];
+  for (let s = 0; s < S; s++) {
+    const sp = DATA.species[s];
+    if (sp[3] > state.bst) continue;
+    for (let p = 0; p < P; p++) {
+      const prof = DATA.profiles[p];
+      if (state.off && prof[0] !== state.off) continue;
+      if (state.def && prof[1] !== state.def) continue;
+      if (state.tempo && prof[2] !== state.tempo) continue;
+      const i = cellIndex(state.cp, s, state.band, p);
+      out.push({ s, p, sp, prof, win: WIN[i], hp: HP[i] });
+    }
+  }
+  out.sort((a, b) => metric === "win" ? (b.win - a.win || b.hp - a.hp)
+                                      : (b.hp - a.hp || b.win - a.win));
+  return out;
+}
+
+function pill(value, kind) {
+  const v = value / SCALE;
+  const cls = kind === "win" ? (v >= 0.95 ? "good" : v >= 0.6 ? "warn" : "bad")
+                             : (v >= 0.5 ? "good" : v >= 0.25 ? "warn" : "bad");
+  const el = document.createElement("span");
+  el.className = "pill " + cls;
+  el.textContent = v.toFixed(3);
+  return el;
+}
+
+function cell(text, cls) {
+  const td = document.createElement("td");
+  if (cls) td.className = cls;
+  if (text !== undefined) td.textContent = text;
+  return td;
+}
+
+function renderRank() {
+  const all = ranked();
+  const metric = metricNow();
+  const body = $("rankBody");
+  const known = DATA.known[state.cp];
+  const chosen = profileIndex(state.pick.off, state.pick.def, state.pick.tempo);
+  $("rankNote").textContent = all.length.toLocaleString("pt-PT")
+    + " variantes · ordenado por " + (metric === "win" ? "vitória" : "HP");
+  document.querySelectorAll("#rank th[data-sort]").forEach(th =>
+    th.classList.toggle("sorted", th.dataset.sort === metric));
+
+  body.innerHTML = "";
+  if (!all.length) {
+    const tr = document.createElement("tr");
+    const td = cell("Nenhuma variante passa estes filtros.", "empty");
+    td.colSpan = 7;
+    tr.append(td);
+    body.append(tr);
+  }
+  all.slice(0, state.limit).forEach((r, n) => {
+    const tr = document.createElement("tr");
+    tr.dataset.s = r.s;
+    tr.dataset.p = r.p;
+    if (r.s === state.pick.s && r.p === chosen) tr.setAttribute("aria-selected", "true");
+    const mon = cell();
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = r.sp[1];
+    const types = document.createElement("span");
+    types.className = "types";
+    types.textContent = " " + r.sp[2].join("/");
+    mon.append(name, types);
+    const win = cell(undefined, "num");
+    win.append(pill(r.win, "win"));
+    const hp = cell(undefined, "num");
+    hp.append(pill(r.hp, "hp"));
+    tr.append(cell(n + 1, "rank"), mon, cell(r.sp[3], "num"),
+              cell(r.prof.join(" · "), "prof"), win, hp,
+              cell(known[r.s], "num"));
+    tr.onclick = () => {
+      state.pick = { s: r.s, off: r.prof[0], def: r.prof[1], tempo: r.prof[2], band: state.band };
+      syncPicker();
+      renderRank();
+      renderPick();
+      renderMoveset();
+    };
+    body.append(tr);
+  });
+
+  $("more").hidden = all.length <= state.limit;
+  $("moreBtn").textContent = "Mostrar mais " + Math.min(60, all.length - state.limit)
+    + " de " + all.length.toLocaleString("pt-PT");
+}
+
+function series() {
+  const p = profileIndex(state.pick.off, state.pick.def, state.pick.tempo);
+  return CPS.map((cp, c) => {
+    const i = cellIndex(c, state.pick.s, state.pick.band, p);
+    return { cp, win: WIN[i], hp: HP[i] };
+  });
+}
+
+function renderPick() {
+  const data = series();
+  const sp = DATA.species[state.pick.s];
+  const worst = data.reduce((a, b) => a.win <= b.win ? a : b);
+  const meanHp = data.reduce((a, d) => a + d.hp, 0) / data.length / SCALE;
+
+  const verdict = $("verdict");
+  verdict.innerHTML = "";
+  const title = document.createElement("strong");
+  title.textContent = sp[1];
+  const sub = document.createElement("span");
+  sub.className = "types";
+  sub.textContent = " " + sp[2].join("/") + " · BST " + sp[3]
+    + (sp[3] <= 550 ? "" : " · acima de 550, só como adversário");
+  const line = document.createElement("p");
+  line.textContent = "Pior checkpoint: " + worst.cp.name + ", " + show(worst.win)
+    + " de vitória. HP médio ao longo da run: " + meanHp.toFixed(3) + ".";
+  verdict.append(title, sub, line);
+
+  const W = 320, H = 112, padL = 6, padR = 6, padT = 10, padB = 18;
+  const x = (i) => padL + i * (W - padL - padR) / (data.length - 1);
+  const y = (v) => padT + (1 - v / SCALE) * (H - padT - padB);
+  const path = (key) => data.map((d, i) =>
+    (i ? "L" : "M") + x(i).toFixed(1) + "," + y(d[key]).toFixed(1)).join("");
+  const dots = data.map((d, i) =>
+    '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(d.win).toFixed(1)
+    + '" r="2.4" fill="var(--accent)"></circle>').join("");
+  const labels = data.map((d, i) =>
+    '<text x="' + x(i).toFixed(1) + '" y="' + (H - 5) + '" font-size="7.5" fill="var(--fg-faint)" text-anchor="middle">'
+    + d.cp.name.slice(0, 4) + "</text>").join("");
+  $("chart").innerHTML =
+    '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Vitória e HP ao longo dos 9 checkpoints">'
+    + '<line x1="' + padL + '" y1="' + y(SCALE) + '" x2="' + (W - padR) + '" y2="' + y(SCALE) + '" stroke="var(--line)"></line>'
+    + '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="var(--line)"></line>'
+    + '<path d="' + path("hp") + '" fill="none" stroke="var(--fg-dim)" stroke-width="1.6" stroke-linejoin="round"></path>'
+    + '<path d="' + path("win") + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"></path>'
+    + dots + labels + "</svg>";
+
+  const body = $("runBody");
+  body.innerHTML = "";
+  for (const d of data) {
+    const tr = document.createElement("tr");
+    const name = cell(d.cp.name);
+    name.style.textTransform = "capitalize";
+    if (DANGER.has(d.cp.name)) {
+      const flag = document.createElement("span");
+      flag.className = "pill bad";
+      flag.textContent = "perigo";
+      name.append(" ", flag);
+    }
+    const win = cell(undefined, "num");
+    win.append(pill(d.win, "win"));
+    const hp = cell(undefined, "num");
+    hp.append(pill(d.hp, "hp"));
+    tr.append(name, cell(d.cp.level + " vs " + d.cp.opponent, "num"), win, hp);
+    body.append(tr);
+  }
+}
+
+/* ---- moveset concreto, calculado na hora ---- */
+
+const MOVES = DATA.moves.map(([name, type, power, pp]) => ({ name, type, power, pp }));
+const MOVE_BY_NAME = new Map(MOVES.map(m => [m.name, m]));
+const PHYSICAL = new Set(DATA.physical);
+const EFFECT = makeChart(DATA.chart);
+const poolCache = new Map();
+
+function poolFor(cp) {
+  if (!poolCache.has(cp)) {
+    poolCache.set(cp, buildPool(DATA.species, DATA.profiles,
+                                CPS[cp].opponent, EFFECT));
+  }
+  return poolCache.get(cp);
+}
+
+function attackerNow() {
+  const sp = DATA.species[state.pick.s];
+  const band = DATA.bands[state.pick.band];
+  const iv = DATA.ivs[band];
+  const level = CPS[state.cp].level;
+  const profile = [state.pick.off, state.pick.def, state.pick.tempo];
+  const stats = variantStats(sp[3], profile, level, iv);
+  return Object.assign({}, stats, { level, types: sp[2] });
+}
+
+function renderMoveset() {
+  const chosen = state.moves.filter(Boolean).map(n => MOVE_BY_NAME.get(n));
+  const cp = CPS[state.cp];
+  $("msWhere").textContent = DATA.species[state.pick.s][1]
+    + " · " + state.pick.off + "/" + state.pick.def + "/" + state.pick.tempo
+    + " · IV " + DATA.bands[state.pick.band]
+    + " · " + cp.name + " (lv " + cp.level + " vs " + cp.opponent + ")";
+
+  const body = $("msBody");
+  body.innerHTML = "";
+  if (!chosen.length) {
+    $("msWin").textContent = "—";
+    $("msHp").textContent = "—";
+    $("msWinVs").textContent = "";
+    $("msHpVs").textContent = "";
+    $("msTime").textContent = "";
+    const tr = document.createElement("tr");
+    const td = cell("Escolhe pelo menos um move.", "empty");
+    td.colSpan = 5;
+    tr.append(td);
+    body.append(tr);
+    return;
+  }
+
+  const started = performance.now();
+  const attacker = attackerNow();
+  const pool = poolFor(state.cp);
+  const full = scoreMoveset(attacker, chosen, pool, PHYSICAL);
+
+  for (const move of chosen) {
+    const without = chosen.filter(m => m !== move);
+    const other = without.length
+      ? scoreMoveset(attacker, without, pool, PHYSICAL)
+      : { win: 0, hpLeft: 0 };
+    const drop = full.win - other.win;
+    const tr = document.createElement("tr");
+    const delta = cell((drop > 0 ? "−" : "") + Math.abs(drop).toFixed(4),
+                       "num delta " + (drop > 0.0005 ? "up" : "flat"));
+    tr.append(cell(move.type.toLowerCase(), "types"), cell(move.name, "name"),
+              cell(move.power, "num"), cell(move.pp || "—", "num"), delta);
+    body.append(tr);
+  }
+  const took = Math.round(performance.now() - started);
+
+  const p = profileIndex(state.pick.off, state.pick.def, state.pick.tempo);
+  const i = cellIndex(state.cp, state.pick.s, state.pick.band, p);
+  $("msWin").textContent = full.win.toFixed(4);
+  $("msHp").textContent = full.hpLeft.toFixed(4);
+  $("msWinVs").textContent = "tabela (moves aleatórios): " + show(WIN[i]);
+  $("msHpVs").textContent = "tabela (moves aleatórios): " + show(HP[i]);
+  $("msTime").textContent = took + " ms · " + pool.rows.length.toLocaleString("pt-PT") + " adversários";
+}
+
+function buildSlots() {
+  const box = $("slots");
+  box.innerHTML = "";
+  state.moves.forEach((current, slot) => {
+    const select = document.createElement("select");
+    select.id = "slot" + slot;
+    select.setAttribute("aria-label", "Move " + (slot + 1));
+    fill(select, MOVES.map(m => [m.name, m.name + " · " + m.type.toLowerCase() + " " + m.power]), "vazio");
+    select.value = current || "";
+    select.onchange = (e) => { state.moves[slot] = e.target.value; renderMoveset(); };
+    box.append(select);
+  });
+}
+
+function syncPicker() {
+  $("pickSpecies").value = String(state.pick.s);
+  $("pickOff").value = state.pick.off;
+  $("pickDef").value = state.pick.def;
+  $("pickTempo").value = state.pick.tempo;
+  $("pickBand").value = String(state.pick.band);
+}
+
+function render() {
+  buildRail();
+  $("bstval").textContent = state.bst >= 780 ? "sem limite" : "≤ " + state.bst;
+  renderRank();
+  renderPick();
+  renderMoveset();
+}
+
+function init() {
+  $("meta").textContent = S + " espécies · " + P + " perfis de stats · "
+    + B + " bandas de IV · " + CPS.length + " checkpoints · "
+    + (S * P * B * CPS.length).toLocaleString("pt-PT") + " células";
+
+  fill($("band"), DATA.bands.map((b, i) => [i, b]));
+  $("band").value = String(state.band);
+  fill($("off"), OFF.map(r => [r, r]), "todos");
+  fill($("def"), DEF.map(r => [r, r]), "todos");
+  fill($("tempo"), TEMPO.map(r => [r, r]), "todos");
+
+  const names = DATA.species
+    .map((sp, i) => [i, sp[1] + " · " + sp[2].join("/") + " · " + sp[3]])
+    .sort((a, b) => a[1].localeCompare(b[1]));
+  fill($("pickSpecies"), names);
+  fill($("pickOff"), OFF.map(r => [r, r]));
+  fill($("pickDef"), DEF.map(r => [r, r]));
+  fill($("pickTempo"), TEMPO.map(r => [r, r]));
+  fill($("pickBand"), DATA.bands.map((b, i) => [i, b]));
+  syncPicker();
+  buildSlots();
+
+  $("bst").oninput = (e) => { state.bst = +e.target.value; state.limit = 40; render(); };
+  $("band").onchange = (e) => { state.band = +e.target.value; renderRank(); };
+  for (const key of ["off", "def", "tempo"]) {
+    $(key).onchange = (e) => { state[key] = e.target.value; state.limit = 40; renderRank(); };
+  }
+  $("metric").onclick = (e) => {
+    const button = e.target.closest("button[data-metric]");
+    if (!button) return;
+    state.metric = button.dataset.metric;
+    $("metric").querySelectorAll("button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b === button)));
+    renderRank();
+  };
+  document.querySelectorAll("#rank th[data-sort]").forEach(th => {
+    th.onclick = () => {
+      state.metric = th.dataset.sort;
+      $("metric").querySelectorAll("button").forEach(b =>
+        b.setAttribute("aria-pressed", String(b.dataset.metric === state.metric)));
+      renderRank();
+    };
+  });
+  $("moreBtn").onclick = () => { state.limit += 60; renderRank(); };
+  $("pickSpecies").onchange = (e) => { state.pick.s = +e.target.value; renderPick(); renderRank(); renderMoveset(); };
+  $("pickOff").onchange = (e) => { state.pick.off = e.target.value; renderPick(); renderRank(); renderMoveset(); };
+  $("pickDef").onchange = (e) => { state.pick.def = e.target.value; renderPick(); renderRank(); renderMoveset(); };
+  $("pickTempo").onchange = (e) => { state.pick.tempo = e.target.value; renderPick(); renderRank(); renderMoveset(); };
+  $("pickBand").onchange = (e) => { state.pick.band = +e.target.value; renderPick(); renderMoveset(); };
+
+  render();
+}
+
+init();
+</script>

@@ -1,0 +1,17 @@
+[project]
+name = "ironmon-solver"
+version = "1.0.0"
+description = "Tabela de referencia para Kaizo IronMON em Pokemon FireRed"
+requires-python = ">=3.12"
+dependencies = ["numpy>=1.26"]
+
+[project.urls]
+Homepage = "https://goncalofgoncalves.github.io/IronMon-Solver/"
+Source = "https://github.com/GoncaloFGoncalves/IronMon-Solver"
+
+[tool.setuptools]
+packages = ["mon"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
