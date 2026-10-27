@@ -1000,29 +1000,31 @@ que é onde serve de facto para comprimir o estado. Dentro da batalha a conta é
 
 ---
 
-## 5. Decisões em aberto
+## 5. Próximos passos
 
-**Bloqueiam implementação:**
+Nada aqui bloqueia o que está publicado: a camada 0 está calculada e a página serve-a. São os
+pontos onde o modelo pode ficar melhor, e os sítios onde assumi um valor em vez de o medir.
+
+**Precisam de dados ou de calibração em jogo:**
 
 1. **As chances de efeito do `move_meta` são modernas** e não há `move_changelog` para elas, logo
    não há como as reverter para Gen 3 a partir dos dados. Ficam por verificar. Quinta instância
    da armadilha.
-3. Calibração do `DUNGEON_SELF_STATUS = 0.25` e **verificação em jogo das contagens do
+2. Calibração do `DUNGEON_SELF_STATUS = 0.25` e **verificação em jogo das contagens do
    `dungeons.py`** — são estimativa de FRLG, não dados medidos.
-5. **Atacante de referência** para o teste de glass cannon (§3.8): nível e stats. Não bloqueia o
+3. **Atacante de referência** para o teste de glass cannon (§3.8): nível e stats. Não bloqueia o
    cálculo, só a etiquetagem — decide-se melhor depois de ver a distribuição.
-6. **Critério de S/A/B por arquétipo** além dos percentis (durável, dano alto e lento). Idem.
-7. **Nível exato da forced-evo** (assumido ~30). Determina a partir de que checkpoint o pool
+4. **Critério de S/A/B por arquétipo** além dos percentis (durável, dano alto e lento). Idem.
+5. **Nível exato da forced-evo** (assumido ~30). Determina a partir de que checkpoint o pool
    encolhe para evoluções finais.
 
 **Menores:**
 
-8. **Limites por stat no randomizer** (mínimo/máximo por slot), se existirem. Afetariam a
+6. **Limites por stat no randomizer** (mínimo/máximo por slot), se existirem. Afetariam a
    esperança de `BST/6` do §3.2.
-9. Valor representativo de cada banda de IV e o **intervalo 20-24 não coberto** (§3.4).
-10. Confirmar em jogo a tabela do §3.3, sobretudo o conjunto "obrigatório" — sai dos spinners e
+7. Confirmar em jogo a tabela do §3.3, sobretudo o conjunto "obrigatório" — sai dos spinners e
    walkers do mapa, que é um sinal de movimento e não de obrigatoriedade.
-11. Fonte dos dados da run nas camadas 2-4: input manual ou leitura do Ironmon Tracker. Não
+8. Fonte dos dados da run nas camadas 2-4: input manual ou leitura do Ironmon Tracker. Não
    bloqueia — o modo por omissão é consulta sem input (§1.2).
 
 **Resolvidas:**
@@ -1081,13 +1083,7 @@ terceira vez neste projeto que dois caminhos para a mesma resposta apanharam bug
 logo dois: `2 * level // 5` nao e `2 * floor(level/5)`, e o Python arredonda meios para par
 (`round(132.5) == 132`), o que divergia em todo o BST que caisse num `.5`.
 
-## 6. Notas de processo
-
-- Regras de trabalho em `../../CLAUDE.md`.
-- Testes com `/tdd` à medida que se constrói. Nada é dado como terminado sem testes.
-- `/ponytail-review` no diff antes de fechar tarefa.
-
-## 7. Referências
+## 6. Referências
 
 - [FRLG IronMON Map](https://kelseyyoung.github.io/FRLGIronmonMap/) — mapa interativo com dados de treinadores
 - [Official IronMon Randomizer Settings](https://gist.github.com/UTDZac/a147c497424dfbd537d8c4b0c22b5621) — settings strings oficiais

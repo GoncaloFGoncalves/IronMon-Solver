@@ -1,5 +1,9 @@
 # GRUPOS — proposta para aprovação
 
+> Registo das decisoes de composicao, nao uma folha por preencher: todos os grupos
+> abaixo estao aprovados e implementados. O `mon/moves.py` e o `mon/abilities.py`
+> citam-no pelas letras dos grupos.
+
 Composição completa de todos os agrupamentos do §6 do CONTEXT.md. Tudo extraído dos dados reais
 do `veekun/pokedex` (Gen 3, moves 1-354, abilities de generation_id <= 3), não de memória.
 
@@ -9,13 +13,13 @@ Marca cada grupo com OK ou NÃO.
 
 ## A. Moves excluídos
 
-### A1 — OHKO — 4 moves · `[ ]`
+### A1 — OHKO — 4 moves · `[x]`
 
 ```
 fissure   guillotine   horn-drill   sheer-cold
 ```
 
-### A2 — Setup (status que sobe stats do próprio) — 21 moves · `[ ]`
+### A2 — Setup (status que sobe stats do próprio) — 21 moves · `[x]`
 
 ```
 acid-armor    agility       amnesia       barrier       bulk-up
@@ -184,13 +188,13 @@ aproveitamento.
 Classificadas abaixo. As classes dizem **onde entram no pipeline**, não quanto valem — o quanto
 sai do cálculo de aproveitamento.
 
-### D0 — Banidas pelo ruleset — 3 · `[ ]`
+### D0 — Banidas pelo ruleset — 3 · `[x]`
 
 ```
 huge-power   pure-power   wonder-guard
 ```
 
-### D1 — Altera o type chart — 5 · `[ ]`
+### D1 — Altera o type chart — 5 · `[x]`
 
 ```
 levitate       evita GROUND
@@ -200,7 +204,7 @@ water-absorb   absorve WATER
 thick-fat      metade de FIRE e ICE
 ```
 
-### D2b — Aproveitamento condicional — 2 · `[ ]`
+### D2b — Aproveitamento condicional — 2 · `[x]`
 
 ```
 rock-head    vale se o moveset tiver recuo (double-edge, volt-tackle, take-down, submission)
@@ -210,7 +214,7 @@ damp         vale contra Explosion adversario; ZERO se o teu mon for GHOST
 Saíram de D8. São o exemplo mais limpo do modelo de aproveitamento: uma depende do **moveset**,
 a outra dos **tipos** do mon.
 
-### D2 — Altera stats efetivos — 9 · `[ ]`
+### D2 — Altera stats efetivos — 9 · `[x]`
 
 ```
 guts           Atk x1.5 com status
@@ -225,7 +229,7 @@ torrent        WATER x1.5 abaixo de 1/3 HP
 swarm          BUG x1.5 abaixo de 1/3 HP
 ```
 
-### D3 — Altera o upside — 19 · `[ ]`
+### D3 — Altera o upside — 19 · `[x]`
 
 Não são independentes do grupo C: têm de ser calculadas em conjunto (§3.5b).
 
@@ -244,13 +248,13 @@ synchronize    devolve burn/paralysis/poison ao atacante
 natural-cure   cura ao trocar
 ```
 
-### D4 — Altera turnos — 1 · `[ ]`
+### D4 — Altera turnos — 1 · `[x]`
 
 ```
 truant         salta um turno em cada dois
 ```
 
-### D5 — Meteorologia — 10 · `[ ]`
+### D5 — Meteorologia — 10 · `[x]`
 
 ```
 drizzle  drought  sand-stream          invocam
@@ -260,7 +264,7 @@ air-lock     cloud-nine               anulam meteorologia
 forecast                              so o Castform
 ```
 
-### D6 — Contacto / passivo — 6 · `[ ]`
+### D6 — Contacto / passivo — 6 · `[x]`
 
 ```
 static  poison-point  flame-body  effect-spore    30% de status ao ser tocado
@@ -268,7 +272,7 @@ rough-skin                                        1/8 HP ao ser tocado
 cute-charm                                        30% de infatuation ao ser tocado
 ```
 
-### D8 — Sem efeito material — 19 · `[ ]`
+### D8 — Sem efeito material — 19 · `[x]`
 
 ```
 illuminate  run-away  pickup  stench  sticky-hold  suction-cups
