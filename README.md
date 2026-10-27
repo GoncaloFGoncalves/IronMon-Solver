@@ -111,3 +111,13 @@ bugs neste projeto.
 de EXP; [pret/pokefirered](https://github.com/pret/pokefirered) para os exp yields de Gen 3, que o
 veekun guarda com os valores modernos; [kelseyyoung/FRLGIronmonMap](https://github.com/kelseyyoung/FRLGIronmonMap)
 para os treinadores.
+
+---
+
+## Licença
+
+[MIT](LICENSE) — copyright (c) 2026 Gonçalo Faria Gonçalves.
+
+Cobre o código deste repositório. Os dados do jogo que a página contém — nomes de espécies,
+tipos, BSTs, nomes de moves, exp yields — são da Nintendo e da Game Freak, e a licença não os
+abrange.

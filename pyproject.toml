@@ -3,6 +3,9 @@ name = "ironmon-solver"
 version = "1.0.0"
 description = "Tabela de referencia para Kaizo IronMON em Pokemon FireRed"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Gonçalo Faria Gonçalves" }]
 dependencies = ["numpy>=1.26"]
 
 [project.urls]
