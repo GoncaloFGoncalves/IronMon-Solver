@@ -309,6 +309,32 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
     </div>
   </section>
 
+  <section class="panel custom">
+    <h2>Testar um mon <span id="cuWhere"></span></h2>
+    <p class="note">O randomizer não dá 27 distribuições — dá uma qualquer que preserva o BST. Aqui distribui-o tu pelos seis stats e vê a run inteira. Os botões carregam perfis da grelha como ponto de partida.</p>
+    <div class="pick">
+      <div class="row">
+        <div class="field"><label for="cuSpecies">Espécie</label><select id="cuSpecies"></select></div>
+        <div class="field"><label for="cuBand">IV</label><select id="cuBand"></select></div>
+        <div class="field"><label for="cuAbility">Ability</label><select id="cuAbility"></select></div>
+      </div>
+    </div>
+    <div class="budget" id="cuBudget"></div>
+    <div class="sliders" id="cuSliders"></div>
+    <div class="seg presets" id="cuPresets">
+      <button type="button" data-preset="hybrid">híbrido</button>
+      <button type="button" data-preset="physical">físico</button>
+      <button type="button" data-preset="special">especial</button>
+      <button type="button" data-preset="bulky">tanque</button>
+      <button type="button" data-preset="fast">rápido</button>
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>Checkpoint</th><th class="num">Nível</th><th class="num">Vitória</th><th class="num">HP</th><th class="num">Risco</th><th class="num">Ability</th></tr></thead>
+      <tbody id="cuBody"></tbody>
+    </table></div>
+    <div class="timing" id="cuTime"></div>
+  </section>
+
   <div class="panels">
     <section class="panel">
       <h2>O que me mata <span id="bpWhere"></span></h2>
@@ -344,6 +370,15 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
 </div>
 
 <style>
+.sliders { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; margin: 8px 0; }
+.sliders .sl { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 8px; font-size: 12px; }
+.sliders .sl label { color: var(--fg-dim); text-transform: uppercase; letter-spacing: .04em; }
+.sliders .sl b { text-align: right; font-variant-numeric: tabular-nums; }
+.sliders input[type=range] { width: 100%; }
+.budget { font-size: 12px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.budget.over { color: var(--bad, #c5503f); }
+.presets { margin-bottom: 10px; }
+@media (max-width: 560px) { .sliders { grid-template-columns: 1fr; } }
 .hpbox { margin-bottom: 10px; }
 .hpbox input[type=range] { width: 100%; }
 .hpbox output { font-variant-numeric: tabular-nums; color: var(--fg-dim); font-size: 12px; }
@@ -385,6 +420,7 @@ const state = {
   pick: { s: 142, off: OFF[0], def: DEF[0], tempo: TEMPO[0], band: 2 },
   moves: ["body-slam", "surf", "earthquake", "ice-beam"],
   bpHp: 100,
+  custom: { s: 142, bases: null, band: 2, ability: "" },
 };
 
 // O atacante de referencia por checkpoint: percentil 50 do Atk/SpA do pool ao
@@ -730,6 +766,233 @@ function renderWorst(attacker, chosen, pool, profile) {
   }
 }
 
+/* ---- testar um mon: distribuir o BST a mao ---- */
+
+const STAT_NAMES = ["HP", "Atk", "Def", "SpA", "SpD", "Spe"];
+const STAT_FLOOR = 1;
+// As quatro habilidades com mecanica modelada, mais a ausencia. As outras 69
+// valem zero no modelo em vez de valerem um palpite (GRUPOS.md D).
+const ABILITIES = [["", "nenhuma"], ["guts", "guts"], ["truant", "truant"],
+                   ["intimidate", "intimidate"], ["rock-head", "rock-head"]];
+const PRESET_PROFILE = {
+  hybrid: ["hybrid", "hybrid", "hybrid"],
+  physical: ["physical", "def_tank", "hybrid"],
+  special: ["special", "spdef_tank", "hybrid"],
+  bulky: ["hybrid", "def_tank", "bulky"],
+  fast: ["hybrid", "hybrid", "fast"],
+};
+// A sala mais curta das doze (Pewter, 7 mons): o desconto maior. Um mon que
+// so se aproveita numa fila longa nao deve parecer bom por omissao.
+const CUSTOM_MONS = 7;
+
+const customBst = () => DATA.species[state.custom.s][3];
+
+function customBases() {
+  if (!state.custom.bases) loadPreset("hybrid");
+  return state.custom.bases;
+}
+
+function loadPreset(name) {
+  state.custom.bases = baseStats(customBst(), PRESET_PROFILE[name]).map(Math.round);
+  fixBudget();
+}
+
+/* Mantem a soma igual ao BST tirando ou dando aos outros stats, em
+   proporcao. Sem isto um slider sozinho rompia o invariante do modelo: em
+   Kaizo os stats redistribuem-se, nao se inventam. */
+function fixBudget(moved) {
+  const bst = customBst();
+  const bases = state.custom.bases;
+  let diff = bst - bases.reduce((a, b) => a + b, 0);
+  for (let guard = 0; guard < 64 && diff !== 0; guard++) {
+    const movable = bases.map((v, i) => i)
+      .filter(i => i !== moved && (diff > 0 || bases[i] > STAT_FLOOR));
+    if (!movable.length) break;
+    const share = diff / movable.length;
+    for (const i of movable) {
+      const step = diff > 0 ? Math.ceil(share) : Math.floor(share);
+      const next = Math.max(STAT_FLOOR, bases[i] + step);
+      diff -= next - bases[i];
+      bases[i] = next;
+      if (diff === 0) break;
+    }
+  }
+}
+
+let customTimer = null;
+
+function queueCustom() {
+  if (customTimer !== null) clearTimeout(customTimer);
+  customTimer = setTimeout(() => { customTimer = null; renderCustom(); }, 120);
+}
+
+function buildSliders() {
+  const host = $("cuSliders");
+  host.innerHTML = "";
+  const bases = customBases();
+  const bst = customBst();
+  STAT_NAMES.forEach((name, i) => {
+    const wrap = document.createElement("div");
+    wrap.className = "sl";
+    const label = document.createElement("label");
+    label.textContent = name;
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(STAT_FLOOR);
+    slider.max = String(bst - 5 * STAT_FLOOR);
+    slider.value = String(bases[i]);
+    const value = document.createElement("b");
+    value.textContent = bases[i];
+    slider.oninput = (e) => {
+      state.custom.bases[i] = +e.target.value;
+      fixBudget(i);
+      buildSliders();
+      // Os numeros chegam quando se para de arrastar: a 0.5 s por render,
+      // recalcular a cada pixel punha a pagina a arrastar-se.
+      queueCustom();
+    };
+    wrap.append(label, slider, value);
+    host.append(wrap);
+  });
+  const total = bases.reduce((a, b) => a + b, 0);
+  const budget = $("cuBudget");
+  budget.textContent = "soma " + total + " de " + bst + " de BST"
+    + (total === bst ? "" : " — desalinhado");
+  budget.className = "budget" + (total === bst ? "" : " over");
+}
+
+/* O perfil de dano recebido depende so de (tipos, Def, SpD) -- nao do HP,
+   do Atk, do SpA nem da Speed. Sem esta chave, mexer o slider do Atk
+   recalculava 194x10422 nove vezes e o painel custava 2.7 s por movimento. */
+const customCache = new Map();
+
+/* O painel amostra o pool: 1 em 7 dos 10 422. O erro e ~0.001 no `win` e
+   ~0.002 no `hp`, e o painel passa de 2.7 s para ~0.5 s.
+   O passo **tem de ser coprimo com 27**, o numero de perfis -- com 7 ou 11
+   percorre-se a grelha toda; com 3 ou 9 apanham-se sempre os mesmos perfis
+   de cada especie e o erro do `win` salta de 0.001 para 0.008. */
+const CUSTOM_STRIDE = 7;
+const customPools = new Map();
+
+function customPool(cp) {
+  if (!customPools.has(cp)) {
+    const full = poolFor(cp);
+    const rows = full.rows.filter((_, i) => i % CUSTOM_STRIDE === 0);
+    customPools.set(cp, { ...full, rows });
+  }
+  return customPools.get(cp);
+}
+
+function customProfileFor(cp, attacker, pool) {
+  const key = cp + "|" + attacker.types.join("/") + "|"
+    + attacker.defense + "|" + attacker.specialDefense;
+  if (!customCache.has(key)) {
+    if (customCache.size > 36) customCache.clear();
+    customCache.set(key, incomingProfile(attacker, pool, MOVES, PHYSICAL));
+  }
+  return customCache.get(key);
+}
+
+function customAttacker(cp) {
+  const sp = DATA.species[state.custom.s];
+  const iv = DATA.ivs[DATA.bands[state.custom.band]];
+  const level = CPS[cp].level;
+  const stats = statsFromBases(customBases(), level, iv);
+  return Object.assign({}, stats, { level, types: sp[2] });
+}
+
+/* O swing da ability, medido nos defensores **disputados**.
+ *
+ * O kernel mede-o contra o defensor mediano (score._with_ability) porque
+ * fazer 10 422 chamadas escalares por celula custava mais que a celula. Numa
+ * consulta nao ha essa restricao, e e bom que nao haja: contra o mediano o
+ * `win_probability` ja e 1.0000 em todos os nove checkpoints, e contra
+ * certeza absoluta nenhuma habilidade pode mexer -- a coluna dava zero
+ * sempre.
+ *
+ * Nos disputados (0.02 < win < 0.98) o Guts vale +0.37 no Brock e +0.41 no
+ * Elite 4, e exactamente zero nos cinco checkpoints do meio, onde nenhum
+ * combate esta perto o suficiente. Fica numa coluna sua e nao somado a
+ * vitoria: a camada 0 nao tem abilities, e somar tornava os dois numeros
+ * incomparaveis.
+ */
+function abilityFor(attacker, pool, profile, chosen) {
+  if (!state.custom.ability) return null;
+  let total = 0;
+  let contested = 0;
+  // O pool que chega aqui ja vem amostrado pelo `customPool`.
+  for (let i = 0; i < pool.rows.length; i++) {
+    const them = pool.rows[i];
+    let best = 0;
+    for (const move of chosen) {
+      const physical = PHYSICAL.has(move.type);
+      const d = damageBeforeRoll(attacker.level, move.power,
+        physical ? attacker.attack : attacker.specialAttack,
+        physical ? them.defense : them.specialDefense,
+        attacker.types.includes(move.type),
+        pool.effectiveness(move.type, them.types));
+      if (d > best) best = d;
+    }
+    const me = { damage: best, hp: attacker.hp, speed: attacker.speed };
+    const foe = { damage: profile.safe[i], hp: them.hp, speed: them.speed };
+    const base = winProbability(me, foe);
+    if (base <= 0.02 || base >= 0.98) continue;
+    contested++;
+    total += abilityUtilization(state.custom.ability, {
+      me, them: foe,
+      physical: chosen.some(m => PHYSICAL.has(m.type)),
+      incomingPhysical: !!them.physical,
+      recoil: false,
+    }, CUSTOM_MONS);
+  }
+  return contested ? { swing: total / contested, contested } : null;
+}
+
+function renderCustom() {
+  const sp = DATA.species[state.custom.s];
+  const chosen = state.moves.map(n => MOVE_BY_NAME.get(n)).filter(Boolean);
+  $("cuWhere").textContent = sp[1] + " · " + sp[2].join("/")
+    + " · BST " + sp[3]
+    + (sp[3] <= 550 ? "" : " · acima de 550, só como adversário");
+
+  const body = $("cuBody");
+  body.innerHTML = "";
+  if (!chosen.length) return;
+  const started = performance.now();
+
+  for (let cp = 0; cp < CPS.length; cp++) {
+    const attacker = customAttacker(cp);
+    const pool = customPool(cp);
+    const profile = customProfileFor(cp, attacker, pool);
+    const r = scoreMoveset(attacker, chosen, pool, PHYSICAL, MOVES, profile);
+    const ability = abilityFor(attacker, pool, profile, chosen);
+
+    const tr = document.createElement("tr");
+    const name = cell(CPS[cp].name);
+    name.style.textTransform = "capitalize";
+    if (DANGER.has(CPS[cp].name)) {
+      const flag = document.createElement("span");
+      flag.className = "pill bad";
+      flag.textContent = "perigo";
+      name.append(" ", flag);
+    }
+    const win = cell(undefined, "num");
+    win.append(pill(Math.round(r.win * SCALE), "win"));
+    const hp = cell(undefined, "num");
+    hp.append(pill(Math.round(r.hpLeft * SCALE), "hp"));
+    const risk = cell(undefined, "num");
+    risk.append(pill(Math.round(r.risk * SCALE), "risk"));
+    tr.append(name, cell(CPS[cp].level + " vs " + CPS[cp].opponent, "num"),
+              win, hp, risk,
+              cell(ability ? "+" + ability.swing.toFixed(4) : "—", "num"));
+    body.append(tr);
+  }
+  $("cuTime").textContent = Math.round(performance.now() - started)
+    + " ms · 9 checkpoints x "
+    + customPool(0).rows.length.toLocaleString("pt-PT")
+    + " adversários (1 em " + CUSTOM_STRIDE + ")";
+}
+
 /* ---- o que me mata ---- */
 
 const TYPES_ALL = [...new Set(MOVES.map(m => m.type))].sort();
@@ -801,6 +1064,7 @@ function render() {
   renderPick();
   renderMoveset();
   renderBreak();
+  renderCustom();
 }
 
 function init() {
@@ -825,6 +1089,33 @@ function init() {
   syncPicker();
   buildSlots();
 
+  fill($("cuSpecies"), names);
+  $("cuSpecies").value = String(state.custom.s);
+  fill($("cuBand"), DATA.bands.map((b, i) => [i, b]));
+  $("cuBand").value = String(state.custom.band);
+  fill($("cuAbility"), ABILITIES);
+  buildSliders();
+  $("cuSpecies").onchange = (e) => {
+    state.custom.s = +e.target.value;
+    state.custom.bases = null;
+    buildSliders();
+    renderCustom();
+  };
+  $("cuBand").onchange = (e) => {
+    state.custom.band = +e.target.value;
+    renderCustom();
+  };
+  $("cuAbility").onchange = (e) => {
+    state.custom.ability = e.target.value;
+    renderCustom();
+  };
+  $("cuPresets").onclick = (e) => {
+    const button = e.target.closest("button[data-preset]");
+    if (!button) return;
+    loadPreset(button.dataset.preset);
+    buildSliders();
+    renderCustom();
+  };
   $("bpHp").oninput = (e) => { state.bpHp = +e.target.value; renderBreak(); };
   $("bst").oninput = (e) => { state.bst = +e.target.value; state.limit = 40; render(); };
   $("band").onchange = (e) => { state.band = +e.target.value; renderRank(); };

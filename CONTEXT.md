@@ -177,7 +177,7 @@ mon/
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          265 testes, todos verdes
+tests/          274 testes, todos verdes
 ```
 
 Notas:
@@ -1096,6 +1096,60 @@ impacto(M) = score(melhor moveset que inclui M) - score(melhor moveset sem M)
 
 Reformulação, sobre movesets reais, do que `addition.py` e `substitution.py` fazem hoje sobre
 tipos abstratos. Os dois módulos sobrevivem conceptualmente, não em código.
+
+### 3.9b Painel de mon específico: distribuir o BST à mão
+
+A tabela só tem os 27 perfis da grelha. O randomizer dá uma distribuição
+qualquer que preserva o BST, logo um mon real cai quase sempre entre perfis.
+O painel resolve isso com seis sliders que redistribuem o BST — o invariante
+do modelo — e os 27 perfis ficam como presets.
+
+Calcula os nove checkpoints ao vivo: `statsFromBases` em vez de
+`variantStats`, e daí para baixo é o mesmo motor.
+
+**Três coisas que isto expôs.**
+
+**1. O swing das abilities contra o defensor mediano é sempre zero.** O kernel
+mede-o assim (`score._with_ability`) porque 10 422 chamadas escalares por
+célula custavam mais que a célula. Mas contra o mediano o `win_probability`
+já é 1,0000 nos nove checkpoints, e contra certeza absoluta nenhuma
+habilidade pode mexer. Numa consulta não há essa restrição, e medindo nos
+**disputados** (0,02 < win < 0,98):
+
+| checkpoint | disputados (de 1 489) | swing do Guts |
+|---|---|---|
+| brock | 70 | **+0,370** |
+| koga | 2 | +0,082 |
+| giovanni | 5 | +0,243 |
+| elite-4 | 27 | **+0,406** |
+| os outros 5 | 0 | — |
+
+A habilidade só pesa onde a run se decide, e é zero nos cinco checkpoints do
+meio. Fica numa coluna sua e não somada à vitória: a camada 0 não tem
+abilities, e somar tornava os dois números incomparáveis.
+
+**2. Dois bugs no port JS que os testes diferenciais não tinham apanhado**,
+ambos no caminho das habilidades, que é o único que produz valores
+fraccionários:
+
+- o `koChance` indexava o array da cauda com HP fraccionário (o residual do
+  Guts é `hp/8`), e `tail[42.5]` é `undefined` → NaN. O fixture tinha
+  `hp=120`, e 120/8 = 15 é inteiro, por isso passou.
+- o Python faz `_totals(int(base_damage), …)`, truncando o dano base; o JS
+  usava `19 × 1,5 = 28,5` tal e qual. Dava 7 pp de diferença.
+
+**3. O passo de amostragem tem de ser coprimo com 27.** O painel amostra 1 em
+7 dos 10 422 defensores (erro ~0,001 no `win`, ~0,002 no `hp`, e 2,7 s → 0,43 s).
+Com passo 3 o erro do `win` salta para 0,008: o pool está ordenado por
+espécie × perfil, 27/3 = 9, e apanham-se sempre os mesmos nove perfis de cada
+espécie. Há teste.
+
+O perfil de dano recebido está em cache por `(checkpoint, tipos, Def, SpD)` —
+não depende do HP, do Atk, do SpA nem da Speed. Não chega para o arrastar,
+porque preservar o BST faz o slider do Atk tirar pontos ao Def; daí o
+debounce de 120 ms.
+
+---
 
 ### Diagrama alvo
 

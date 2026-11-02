@@ -79,8 +79,10 @@ def script():
 def _run(script, tail, tmp_path):
     path = tmp_path / "page.mjs"
     path.write_text(SHIM + "\n" + script + "\n" + tail, encoding="utf-8")
+    # O node escreve UTF-8; sem isto o Windows decodifica em cp1252 e um
+    # travessao na pagina chega aqui como caractere de substituicao.
     result = subprocess.run(["node", str(path)], capture_output=True,
-                            text=True, timeout=600)
+                            text=True, encoding="utf-8", timeout=600)
     assert result.returncode == 0, result.stderr[-3000:]
     return json.loads(result.stdout)
 
@@ -120,3 +122,98 @@ def test_the_wounded_slider_makes_more_types_lethal(script, tmp_path):
         console.log(JSON.stringify({ cheio, ferido }));
     """), tmp_path)
     assert got["ferido"] > got["cheio"], got
+
+
+def test_the_custom_panel_draws_the_whole_run(script, tmp_path):
+    got = _run(script, textwrap.dedent("""
+        init();
+        console.log(JSON.stringify({
+          linhas: __rows("cuBody"),
+          sliders: __rows("cuSliders"),
+          orcamento: document.getElementById("cuBudget").textContent,
+        }));
+    """), tmp_path)
+    assert got["linhas"] == 9, got
+    assert got["sliders"] == 6, got
+    assert "desalinhado" not in got["orcamento"], got["orcamento"]
+
+
+def test_the_sliders_always_preserve_the_bst(script, tmp_path):
+    # O invariante do modelo: em Kaizo os stats redistribuem-se, nao se
+    # inventam. Qualquer slider em qualquer extremo tem de somar o BST.
+    got = _run(script, textwrap.dedent("""
+        init();
+        const bst = () => DATA.species[state.custom.s][3];
+        const soma = () => state.custom.bases.reduce((a, b) => a + b, 0);
+        const falhas = [];
+        for (const sp of [142, 0, 150]) {
+          state.custom.s = sp;
+          state.custom.bases = null;
+          customBases();
+          for (let i = 0; i < 6; i++) {
+            for (const v of [1, 50, 200, bst() - 5]) {
+              state.custom.bases[i] = v;
+              fixBudget(i);
+              if (soma() !== bst()) falhas.push([sp, i, v, soma(), bst()]);
+              if (Math.min(...state.custom.bases) < 1) falhas.push(["floor", sp, i, v]);
+            }
+          }
+        }
+        console.log(JSON.stringify({ falhas }));
+    """), tmp_path)
+    assert got["falhas"] == [], got["falhas"]
+
+
+def test_the_presets_land_on_the_grid_profiles(script, tmp_path):
+    got = _run(script, textwrap.dedent("""
+        init();
+        const out = {};
+        for (const name of ["hybrid", "physical", "special", "bulky", "fast"]) {
+          loadPreset(name);
+          out[name] = state.custom.bases.slice();
+        }
+        console.log(JSON.stringify(out));
+    """), tmp_path)
+    # Snorlax, BST 540: hibrido da 90 em tudo; fisico concentra em Atk.
+    assert got["hybrid"] == [90, 90, 90, 90, 90, 90], got["hybrid"]
+    assert got["physical"][1] == 135 and got["physical"][3] == 45, got["physical"]
+    assert sum(got["bulky"]) == 540 and got["bulky"][0] > got["bulky"][5]
+
+
+def test_the_ability_column_only_fills_when_one_is_chosen(script, tmp_path):
+    got = _run(script, textwrap.dedent("""
+        init();
+        const coluna = () => document.getElementById("cuBody")
+          .children[0].children[5].textContent;
+        const sem = coluna();
+        state.custom.ability = "guts";
+        renderCustom();
+        const com = coluna();
+        console.log(JSON.stringify({ sem, com }));
+    """), tmp_path)
+    assert got["sem"] == "\u2014", got
+    assert got["com"].startswith("+"), got
+
+
+def test_the_sampling_stride_is_coprime_with_the_profile_count(script, tmp_path):
+    # O pool esta ordenado por especie x perfil, com 27 perfis. Um passo que
+    # divida 27 apanha sempre os mesmos perfis de cada especie: com passo 3 o
+    # erro do `win` salta de 0.001 para 0.008. Com 7 ou 11 percorre a grelha.
+    got = _run(script, textwrap.dedent("""
+        init();
+        const perfis = DATA.profiles.length;
+        const vistos = new Set();
+        const pool = customPool(0);
+        for (let i = 0; i < pool.rows.length; i++) {
+          vistos.add((i * CUSTOM_STRIDE) % perfis);
+        }
+        console.log(JSON.stringify({
+          stride: CUSTOM_STRIDE, perfis, distintos: vistos.size,
+          amostrados: pool.rows.length,
+        }));
+    """), tmp_path)
+    assert got["perfis"] == 27
+    # Coprimo: o passo percorre os 27 perfis, nao um subconjunto.
+    assert got["distintos"] == 27, got
+    import math
+    assert math.gcd(got["stride"], got["perfis"]) == 1, got

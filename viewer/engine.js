@@ -48,6 +48,15 @@ export function statAtLevel(base, level, iv, isHp) {
   return isHp ? common + level + 10 : common + 5;
 }
 
+/* Stats a partir de base stats explicitos, em vez de um dos 27 perfis.
+   O randomizer nao da 27 distribuicoes, da uma qualquer que preserva o BST:
+   os perfis sao a grelha do modelo, nao o que sai no jogo. */
+export function statsFromBases(bases, level, iv) {
+  const [hp, attack, defense, specialAttack, specialDefense, speed] =
+    bases.map((base, i) => statAtLevel(base, level, iv, i === 0));
+  return { hp, attack, defense, specialAttack, specialDefense, speed, bases };
+}
+
 export function variantStats(bst, profile, level, iv) {
   const bases = baseStats(bst, profile);
   const [hp, attack, defense, specialAttack, specialDefense, speed] =
@@ -111,9 +120,17 @@ function tailByTurn(baseDamage) {
 
 export function koChance(baseDamage, hp, turn) {
   if (baseDamage <= 0 || turn <= 0) return 0;
-  const tail = tailByTurn(baseDamage)[turn - 1];
+  // Truncado, como o `damage.probability_of_ko` faz com `int(base_damage)`.
+  // So o caminho das habilidades da dano fraccionario (o Guts multiplica por
+  // 1.5); divergir aqui dava 7 pp de diferenca contra o Python.
+  const tail = tailByTurn(Math.floor(baseDamage))[turn - 1];
   if (hp <= 0) return 1;
-  return hp < tail.length ? tail[hp] : 0;
+  // O HP pode vir fraccionario -- o residual do Guts e hp/8 -- e `tail` e um
+  // array: indexar com 42.5 dava `undefined` e NaN. Os totais de dano sao
+  // inteiros, logo P(total >= 42.5) e P(total >= 43). Em Python a comparacao
+  // e numerica e nao precisava disto.
+  const index = Math.ceil(hp);
+  return index < tail.length ? tail[index] : 0;
 }
 
 export function meanHit(baseDamage) {
@@ -371,6 +388,108 @@ export function worstMatchups(attacker, moves, pool, physicalTypes, threatMoves,
   // que custa mais caro ganhar.
   out.sort((a, b) => a.win - b.win || a.hpLeft - b.hpLeft);
   return out.slice(0, Math.max(0, Math.min(limit || 20, n)));
+}
+
+/* ---- habilidades ---- */
+
+const GUTS_ATTACK_FACTOR = 1.5;
+const RECOIL_FRACTION = 1 / 3;
+const BURN_RESIDUAL = 1 / 8;
+const STATUS_PER_MON = 0.2298;
+const ABILITY_TURNS = 3;        // upside.TURNS: duracao tipica de uma troca
+const ABILITY_MAX_TURNS = 4;    // battle.win_probability
+
+function choose(n, k) {
+  if (k < 0 || k > n) return 0;
+  let r = 1;
+  for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1);
+  return r;
+}
+
+/* P(o atacante ja ter derrubado o defensor ao fim de N turnos).
+   Turnos decorridos nao sao golpes acertados: com `actionChance` abaixo de 1
+   perde-se turnos (paralisia, flinch, Truant), e soma-se pela binomial. */
+function koByTurn(attacker, defender, turns) {
+  if (turns <= 0) return 0;
+  // O residual actua no fim de cada turno, logo ao turno N ja levou N-1.
+  const remaining = defender.hp - (turns - 1) * (defender.residual || 0);
+  if (remaining <= 0) return 1;
+  const acts = attacker.actionChance == null ? 1 : attacker.actionChance;
+  if (acts >= 1) return koChance(attacker.damage, remaining, turns);
+  let total = 0;
+  for (let hits = 0; hits <= turns; hits++) {
+    total += choose(turns, hits) * Math.pow(acts, hits)
+      * Math.pow(1 - acts, turns - hits)
+      * koChance(attacker.damage, remaining, hits);
+  }
+  return total;
+}
+
+/* P(eu derrubar antes de ser derrubado). E o motor analitico do battle.py,
+   nao o vectorizado: a habilidade mede-se contra um defensor so. */
+export function winProbability(me, them, maxTurns) {
+  const turns = maxTurns || ABILITY_MAX_TURNS;
+  const first = me.speed === them.speed ? 0.5 : (me.speed > them.speed ? 1 : 0);
+  let total = 0;
+  for (let turn = 1; turn <= turns; turn++) {
+    const now = koByTurn(me, them, turn) - koByTurn(me, them, turn - 1);
+    if (now <= 0) continue;
+    total += now * (first * (1 - koByTurn(them, me, turn - 1))
+                    + (1 - first) * (1 - koByTurn(them, me, turn)));
+  }
+  return total;
+}
+
+/* P(apanhar status e chegar vivo ao fim da seccao para o aproveitar).
+   Decresce com a fila: o burn tira 1/8 por turno e nao ha cura, logo se o
+   status cai cedo numa sala longa nao se chega ao fim. */
+export function gutsFeasibility(mons) {
+  let total = 0;
+  for (let first = 1; first <= mons; first++) {
+    const remaining = (mons - first + 1) * ABILITY_TURNS;
+    if (remaining * BURN_RESIDUAL < 1) {
+      total += Math.pow(1 - STATUS_PER_MON, first - 1) * STATUS_PER_MON;
+    }
+  }
+  return total;
+}
+
+const ABILITY_EFFECTS = {
+  guts: (ctx) => ctx.physical ? [{
+    ...ctx.me, damage: ctx.me.damage * GUTS_ATTACK_FACTOR,
+    residual: (ctx.me.residual || 0) + ctx.me.hp * BURN_RESIDUAL }, ctx.them] : null,
+  truant: (ctx) => [{
+    ...ctx.me, actionChance: (ctx.me.actionChance == null ? 1 : ctx.me.actionChance) * 0.5 },
+    ctx.them],
+  intimidate: (ctx) => ctx.incomingPhysical
+    ? [ctx.me, { ...ctx.them, damage: ctx.them.damage * 0.5 }] : null,
+  "rock-head": (ctx) => ctx.recoil
+    ? [ctx.me, ctx.them]   // o baseline e que leva o recuo, nao o alterado
+    : null,
+};
+
+/* score(efeito sempre) - score(efeito nunca). Zero quando a habilidade nao
+   tem mecanica modelada ou quando a mecanica nao se aplica a este mon. */
+export function abilitySwing(ability, ctx) {
+  const effect = ABILITY_EFFECTS[ability];
+  if (!effect) return 0;
+  const altered = effect(ctx);
+  if (!altered) return 0;
+  if (ability === "rock-head") {
+    const recoil = ctx.me.damage * RECOIL_FRACTION;
+    const hurt = { ...ctx.me, residual: (ctx.me.residual || 0) + recoil };
+    return winProbability(ctx.me, ctx.them) - winProbability(hurt, ctx.them);
+  }
+  return winProbability(altered[0], altered[1])
+    - winProbability(ctx.me, ctx.them);
+}
+
+const ABILITY_FEASIBILITY = { guts: gutsFeasibility };
+
+export function abilityUtilization(ability, ctx, mons) {
+  const swing = abilitySwing(ability, ctx);
+  const feasibility = ABILITY_FEASIBILITY[ability];
+  return feasibility ? swing * feasibility(mons == null ? 7 : mons) : swing;
 }
 
 export function clearCache() { totalsCache.clear(); }

@@ -115,8 +115,9 @@ def _run(fixture_path: Path, what: str):
     script = fixture_path.parent / ("check_%s.mjs" % what)
     script.write_text(textwrap.dedent("""
         import fs from "node:fs";
-        import { breakpointOf, buildPool, chain, makeChart, scoreMoveset,
-                 variantStats, worstMatchups } from %(engine)s;
+        import { abilitySwing, abilityUtilization, breakpointOf, buildPool,
+                 chain, gutsFeasibility, koChance, makeChart, scoreMoveset,
+                 statsFromBases, variantStats, worstMatchups } from %(engine)s;
         const f = JSON.parse(fs.readFileSync(%(fixture)s, "utf8"));
         const eff = makeChart(f.chart);
         const physical = new Set(f.physical);
@@ -149,6 +150,27 @@ def _run(fixture_path: Path, what: str):
           out = worstMatchups(attacker, mine, pool, physical, all, 10)
             .map(r => ({ name: f.species[Math.floor(r.index / f.profiles.length)][1],
                          win: r.win }));
+        } else if (what === "ability") {
+          const me = { damage: 19, hp: 68, speed: 44 };
+          const them = { damage: 26, hp: 81, speed: 26 };
+          out = %(abilities)s.map(([name, phys, inc, recoil, mons]) => {
+            const ctx = { me, them, physical: phys, incomingPhysical: inc,
+                          recoil };
+            return { swing: abilitySwing(name, ctx),
+                     util: abilityUtilization(name, ctx, mons) };
+          });
+        } else if (what === "fractional") {
+          out = [[26, 42.5, 4], [19, 59.5, 3], [30, 0.5, 1], [12, 100.25, 6]]
+            .map(([d, hp, t]) => koChance(d, hp, t));
+        } else if (what === "feasibility") {
+          out = [1, 2, 7, 12, 20, 30].map(gutsFeasibility);
+        } else if (what === "bases") {
+          const bases = [112, 88, 140, 61, 93, 46];
+          out = [[19, 5], [58, 15], [86, 27]].map(([lv, iv]) => {
+            const s = statsFromBases(bases, lv, iv);
+            return [s.hp, s.attack, s.defense, s.specialAttack,
+                    s.specialDefense, s.speed];
+          });
         } else {
           out = scoreMoveset(attacker, mine, pool, physical, all).risk;
         }
@@ -159,8 +181,73 @@ def _run(fixture_path: Path, what: str):
         "profile": json.dumps(list(PROFILE)),
         "level": LEVEL, "iv": IV, "their": THEIR_LEVEL, "hurt": HURT,
         "what": json.dumps(what),
+        "abilities": json.dumps([[n, p, i, r, m]
+                                 for n, p, i, r, m in ABILITY_CASES]),
     })
     result = subprocess.run(["node", str(script)], capture_output=True,
                             text=True, timeout=180)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
+
+
+ABILITY_CASES = [
+    ("guts", True, True, False, 7),
+    ("guts", True, True, False, 30),
+    ("guts", False, True, False, 7),      # moveset especial: nao se aplica
+    ("truant", True, True, False, 7),
+    ("intimidate", True, True, False, 7),
+    ("intimidate", True, False, False, 7),   # ele bate especial: nao se aplica
+    ("rock-head", True, True, True, 7),
+    ("rock-head", True, True, False, 7),     # sem move de recuo: nao se aplica
+    ("levitate", True, True, False, 7),      # sem mecanica modelada: zero
+]
+
+
+def test_the_ability_port_matches(world):
+    path, _, _, _, _ = world
+    from mon.abilities import MonContext, swing, utilization
+    from mon.battle import Combatant
+    # hp=68 de proposito: o residual do Guts e 68/8 = 8.5, e o HP restante
+    # fica fraccionario. Era o que faltava ao fixture de 120 (120/8 = 15) e
+    # foi por isso que o NaN do `koChance` passou a primeira ronda.
+    me = Combatant(damage=19.0, hp=68.0, speed=44.0)
+    them = Combatant(damage=26.0, hp=81.0, speed=26.0)
+    got = _run(path, "ability")
+    for (name, physical, incoming, recoil, mons), b in zip(ABILITY_CASES, got):
+        ctx = MonContext(me=me, them=them, physical=physical,
+                         incoming_physical=incoming, recoil=recoil)
+        assert abs(swing(name, ctx) - b["swing"]) < 1e-9, name
+        assert abs(utilization(name, ctx, mons=mons) - b["util"]) < 1e-9, (name, mons)
+
+
+def test_a_fractional_hp_does_not_become_nan(world):
+    # O residual do Guts da HP fraccionario, e o `tail` do JS e um array: sem
+    # arredondar o indice, `tail[42.5]` e `undefined` e tudo vira NaN.
+    path, _, _, _, _ = world
+    from mon.damage import probability_of_ko
+    got = _run(path, "fractional")
+    casos = [(26, 42.5, 4), (19, 59.5, 3), (30, 0.5, 1), (12, 100.25, 6)]
+    for (damage, hp, turn), value in zip(casos, got):
+        assert value is not None, (damage, hp, turn)
+        assert abs(probability_of_ko(damage, hp, turn) - value) < 1e-12, (damage, hp, turn)
+
+
+def test_guts_feasibility_matches(world):
+    path, _, _, _, _ = world
+    from mon.abilities import guts_feasibility
+    got = _run(path, "feasibility")
+    for mons, value in zip((1, 2, 7, 12, 20, 30), got):
+        assert abs(guts_feasibility(mons) - value) < 1e-12, mons
+
+
+def test_stats_from_explicit_bases_match(world):
+    # O painel de mon especifico distribui o BST a mao, nao escolhe um dos 27
+    # perfis: os stats tem de sair de base stats arbitrarios.
+    path, _, _, _, _ = world
+    from mon.stats import stat_at_level
+    bases = [112, 88, 140, 61, 93, 46]
+    got = _run(path, "bases")
+    for level, iv, row in zip((19, 58, 86), (5, 15, 27), got):
+        esperado = [stat_at_level(b, level, iv, is_hp=i == 0)
+                    for i, b in enumerate(bases)]
+        assert esperado == row, (level, iv)
