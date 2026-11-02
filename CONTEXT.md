@@ -171,13 +171,14 @@ mon/
   breakpoints.py chains_by_type(...) -> {tipo: [Rung]}        onde cai a linha de morte
   matchups.py   worst_matchups(...) -> [Matchup]              o ranking por defensor
   gauntlet.py   gauntlet(checkpoint, trainers) -> [int]       a sala inteira antes do lider
+  stall.py      resolve(Wall) -> Stall                       a parede: resolve-se a PP
   run.py        python -m mon.run                            a camada 0, retomavel
   export.py     build_payload(...) -> 1.5 MB                 empacota a camada 0
   viewer.py     python -m mon.viewer                         constroi docs/index.html
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          283 testes, todos verdes
+tests/          293 testes, todos verdes
 ```
 
 Notas:
@@ -619,10 +620,11 @@ cálculo:
 **As abilities são totalmente randomizadas** — não são os 2 slots vanilla da espécie. O eixo é
 portanto sobre **todas** as abilities de Gen 3.
 
-**Banidas pelo ruleset: Huge Power, Pure Power e Wonder Guard.** Restam **73 de 76**. Isto é uma
-simplificação real e não um detalhe: eram as três que obrigavam a casos especiais no motor —
-Huge/Pure Power duplicavam o par ofensivo, Wonder Guard invertia toda a análise defensiva.
-Nenhuma precisa de ser modelada.
+**Banidas pelo ruleset: Huge Power, Pure Power e Wonder Guard — esta última em todos os mons
+menos o Shedinja.** Restam 73 de 76 para o eixo geral, e a Huge/Pure Power desaparecem de vez.
+
+Mas a Wonder Guard **não** desaparece: fica no Shedinja, e faz dele o único mon do jogo a quem
+só os super-efetivos tocam. É um caso especial a sério e tem módulo próprio (§3.6h).
 
 **Agrupar por equivalência é obrigatório, não opcional:**
 
@@ -984,6 +986,63 @@ nada. Quem nao mata de um leva um golpe por mon, e e ai que 24 mons separam
 
 *Medido com o adversario mediano a cada nivel, nao com as equipas reais: e a
 estrutura, nao o numero final. O numero final precisa do 4b corrigido.*
+
+---
+
+### 3.6h A parede: o Shedinja, e o Struggle que o resolve
+
+É o único caso em que o número de turnos não tem limite natural — nenhum dos
+dois derruba o outro — e por isso não cabe no `vector.py`, que corta aos 6.
+
+**Dois factos de Gen 3 que invertem a intuição.** O Struggle é *typeless*
+desde Gen 2: não é NORMAL, é neutro contra tudo, e **a Wonder Guard não o
+bloqueia**. O recuo é 1/4 do **dano causado**, não do HP máximo (isso é Gen 4
+em diante).
+
+Logo ficar sem PP **não é perder**: o meu Struggle atinge o Shedinja e 1 de
+HP morre com qualquer coisa. Quem fica sem PP primeiro resolve o embate, nos
+dois sentidos — se for o dele, ele dá Struggle, leva 1/4 de recuo e morre.
+
+**A escala do problema.** Contra BUG/GHOST com Wonder Guard, 156 dos 194
+moves de dano não servem:
+
+| moves conhecidos | P(nenhum super-efetivo) |
+|---|---|
+| 4 | **0,415** |
+| 10 (Misty) | 0,107 |
+| 19 (Koga) | 0,013 |
+| 24 (Elite 4) | 0,004 |
+
+**Mas o stall não funciona.** A conta não é a corrida de PP — é que se morre
+antes dela acabar. Gyarados `physical/def_tank/fast`, a passar turnos sem
+gastar PP:
+
+| checkpoint | levo/turno | turnos que aguento | PP dele para eu ganhar |
+|---|---|---|---|
+| brock | 9 | 6 | 5 |
+| surge | 8 | 15 | 14 |
+| koga | 17 | 10 | 9 |
+| elite-4 | 27 | 7 | 6 |
+
+Os PP do pool são 1, 5, 10, 15, 20, 25, 30, 35, 40. **Um único move de dano
+com 15 PP já ganha em oito dos nove checkpoints** (no Surge dá 0,21). Com os
+60 PP de quatro moves a sobrevivência é 0,0000 em todos.
+
+Portanto o desfecho real é binário e decide-se antes do embate:
+
+- o Shedinja **não me pode tocar** (sem moves de dano, ou os que tem não me
+  afectam) → stall e ganho, custe o que custar em turnos;
+- o Shedinja **toca-me** → morro, a não ser que o PP de dano dele seja de um
+  só move curto.
+
+**Dungeon ou não.** Fora de uma dungeon cura-se e recarrega-se, logo a parede
+é só "sobrevivo ou não". Dentro, saio com **zero PP** e o resto da secção
+faz-se a Struggle — nas filas de 20 a 30 mons (§3.9c) isso é o fim. É aí que
+a run acaba, não no embate: o Shedinja não te mata, esvazia-te.
+
+*O modelo assume que passo turnos sem gastar PP, que é atirar bolas. É o
+único ponto em que depende de um item, e os itens estão fora do modelo por
+decisão (§4b) — anotado como inconsistência conhecida.*
 
 ---
 
@@ -1448,6 +1507,8 @@ logo dois: `2 * level // 5` nao e `2 * floor(level/5)`, e o Python arredonda mei
 ## 6. Referências
 
 - [FRLG IronMON Map](https://kelseyyoung.github.io/FRLGIronmonMap/) — mapa interativo com dados de treinadores
+- [Struggle (move) — Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Struggle_(move)) — typeless desde Gen 2, recuo de 1/4 do dano causado
+- [Recoil — Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Recoil) — a tabela por geração
 - [Official IronMon Randomizer Settings](https://gist.github.com/UTDZac/a147c497424dfbd537d8c4b0c22b5621) — settings strings oficiais
 - [Kaizo IronMON+ rules](https://github.com/Corvimae/kaizo-ironmon-plus/blob/main/rules.md) — ruleset detalhado
 - [FRLG Gym Leaders & Elite Four](https://pokemondb.net/firered-leafgreen/gymleaders-elitefour) — níveis vanilla, base da tabela §3.3
