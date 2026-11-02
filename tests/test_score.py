@@ -48,8 +48,11 @@ def test_knowing_one_move_is_the_pool_average():
     # Com um move so, o esperado e a media simples sobre os moves do pool.
     atacante = variants(SNORLAX, 50, 31)[0]
     alvos = defensores()
-    um = score_variant(atacante, POOL, alvos, known=1).win
-    cada = [score_variant(atacante, [move], alvos, known=1).win for move in POOL]
+    # O pool de ameaca tem de ser o mesmo nos dois lados: o que eu sei nao
+    # muda os 4 moves que ele pode ter sorteado.
+    um = score_variant(atacante, POOL, alvos, known=1, threat_moves=POOL).win
+    cada = [score_variant(atacante, [move], alvos, known=1,
+                          threat_moves=POOL).win for move in POOL]
     assert abs(um - sum(cada) / len(cada)) < 1e-9
 
 
@@ -73,3 +76,68 @@ def test_the_cell_records_how_many_moves_it_assumed():
     atacante = variants(SNORLAX, 50, 31)[0]
     assert score_variant(atacante, POOL, defensores(), known=3).known == 3
     assert score_variant(atacante, POOL[:2], defensores(), known=4).known == 2
+
+
+def _setup():
+    from mon.pool import DefenderPool
+    from mon.veekun import load_moves, load_species
+    from mon.variants import variants
+    species = load_species()
+    moves = [m for m in load_moves() if m.kind == "power" and m.power]
+    pool = DefenderPool([v for o in species for v in variants(o, 56, 31)])
+    return species, moves, pool
+
+
+def test_the_kernel_weighs_the_lethal_draw_against_the_safe_one():
+    # 4b: a troca resolve-se duas vezes, nao uma. A celula tem de ficar entre
+    # os dois extremos -- o cenario em que ele tirou um move que me mata e o
+    # cenario em que nao tirou.
+    import numpy as np
+    from mon.incoming import incoming_profile, lethal_cap
+    from mon.score import score_variant, _scenario_cells
+    from mon.variants import variants
+    species, moves, pool = _setup()
+    one = [s for s in species if s.name == "gyarados"][0]
+    me = [v for v in variants(one, 70, 27)
+          if v.profile == ("physical", "def_tank", "fast")][0]
+
+    share, safe = incoming_profile(me, moves, pool)
+    assert 0.0 < share.mean() < 1.0, "o fixture tem de ter os dois cenarios"
+    cell = score_variant(me, moves, pool, known=19)
+    letal, seguro = _scenario_cells(me, moves, pool, known=19)
+    assert letal.win < cell.win < seguro.win
+
+
+def test_a_four_times_weakness_now_costs_something():
+    # O teste que o modelo antigo nao podia passar: Gyarados e Snorlax, mesmo
+    # BST e mesmo perfil, davam a mesma celula do lado defensivo.
+    from mon.score import score_variant
+    from mon.variants import variants
+    species, moves, pool = _setup()
+    cells = {}
+    for name in ("gyarados", "snorlax"):
+        one = [s for s in species if s.name == name][0]
+        me = [v for v in variants(one, 70, 27)
+              if v.profile == ("physical", "def_tank", "fast")][0]
+        cells[name] = score_variant(me, moves, pool, known=19)
+    assert cells["gyarados"].win < cells["snorlax"].win
+
+
+def test_the_cell_carries_the_lethal_share():
+    # O `hp_left` e condicional a ganhar, por isso sobe quando o risco passa
+    # a ser binario: as vitorias que restam sao as folgadas. Sem a quota
+    # letal a celula diria que o mon fragil esta melhor do que o solido.
+    from mon.score import score_variant
+    from mon.variants import variants
+    species, moves, pool = _setup()
+    cells = {}
+    for name in ("gyarados", "snorlax"):
+        one = [s for s in species if s.name == name][0]
+        me = [v for v in variants(one, 70, 27)
+              if v.profile == ("physical", "def_tank", "fast")][0]
+        cells[name] = score_variant(me, moves, pool, known=19)
+    # O Gyarados (x4 a ELECTRIC) parece melhor pelo HP e e pior pelo risco.
+    assert cells["gyarados"].hp_left > cells["snorlax"].hp_left
+    assert cells["gyarados"].risk > cells["snorlax"].risk
+    for cell in cells.values():
+        assert 0.0 <= cell.risk <= 1.0

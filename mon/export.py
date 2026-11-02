@@ -1,9 +1,9 @@
 """Empacota a camada 0 para o visualizador.
 
 Sao 281 394 celulas (9 checkpoints x 386 especies x 3 bandas x 27 perfis) e
-35 MB de JSON. Numa pagina isso nao entra, mas os dois numeros de cada celula
+39 MB de JSON. Numa pagina isso nao entra, mas os tres numeros de cada celula
 cabem em `uint16` com 4 casas decimais, e a chave nao precisa de viajar:
-deriva-se da posicao. Ficam 1.1 MB, que entram inline.
+deriva-se da posicao. Ficam ~1.7 MB, que entram inline.
 
 A ordem do indice e fixa e esta no proprio payload (`INDEX_ORDER`), para a
 pagina a poder desfazer sem a adivinhar.
@@ -37,6 +37,10 @@ def build_payload(root, checkpoints=SPLITS) -> dict:
     total = len(checkpoints) * SPECIES_COUNT * len(BANDS) * len(PROFILES)
     win = array.array("H", [MISSING]) * total
     hp = array.array("H", [MISSING]) * total
+    # O `risk` fica MISSING quando o bloco nao o traz, em vez de zero: um
+    # bloco da v1 lido como risco zero diria "este mon nunca morre de um
+    # golpe", que e o oposto do que se sabe dele.
+    risk = array.array("H", [MISSING]) * total
 
     profile_index = {tuple(p): i for i, p in enumerate(PROFILES)}
     band_index = {name: i for i, name in enumerate(BANDS)}
@@ -55,6 +59,8 @@ def build_payload(root, checkpoints=SPLITS) -> dict:
                                    profile_index[tuple(row["profile"])])
                 win[index] = round(row["win"] * SCALE)
                 hp[index] = round(row["hp_left"] * SCALE)
+                if "risk" in row:
+                    risk[index] = round(row["risk"] * SCALE)
                 per_species[row["species"] - 1] = row["known"]
         meta.append({"name": checkpoint, "level": level, "opponent": opponent})
         known.append(per_species)
@@ -67,9 +73,23 @@ def build_payload(root, checkpoints=SPLITS) -> dict:
         "bands": BANDS,
         "profiles": PROFILES,
         "known": known,
+        "threats": [_threat(name) for name in checkpoints],
         "win": base64.b64encode(win.tobytes()).decode(),
         "hp": base64.b64encode(hp.tobytes()).decode(),
+        "risk": base64.b64encode(risk.tobytes()).decode(),
     }
+
+
+def _threat(checkpoint: str) -> dict:
+    """O atacante de referencia do checkpoint, para a tabela de breakpoints.
+
+    Depende do pool inteiro ao nivel adversario, logo calcula-se aqui e viaja;
+    o browser nao o conseguiria derivar sem construir os 10 422 defensores.
+    """
+    from mon.breakpoints import threat_levels
+    pair = threat_levels(checkpoint)
+    return {"a": pair.typical.attack, "worst": pair.worst.attack,
+            "level": pair.level}
 
 
 def engine_data() -> dict:

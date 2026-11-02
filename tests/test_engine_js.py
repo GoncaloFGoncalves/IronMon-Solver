@@ -62,7 +62,9 @@ def test_the_browser_engine_matches_the_python_kernel(fixture):
         pool = DefenderPool([v for other in species.values()
                              for v in variants(other, their_level, 31)])
         chosen = [moves[n] for n in names]
-        cell = score_variant(attacker, chosen, pool, known=len(chosen))
+        # Os 4 moves dele saem sempre do pool do jogo, nao do meu moveset.
+        cell = score_variant(attacker, chosen, pool, known=len(chosen),
+                             threat_moves=list(moves.values()))
         expected.append((cell.win, cell.hp_left))
 
     got = _run_node(path)
@@ -90,7 +92,7 @@ def _run_node(fixture_path: Path):
           const attacker = { ...stats, level, types: mon[2] };
           const pool = buildPool(f.species, f.profiles, theirLevel, eff);
           const r = scoreMoveset(attacker, names.map(n => byName.get(n)),
-                                 pool, physical);
+                                 pool, physical, [...byName.values()]);
           out.push([r.win, r.hpLeft]);
         }
         console.log(JSON.stringify(out));

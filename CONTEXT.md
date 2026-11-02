@@ -168,13 +168,16 @@ mon/
   orderstat.py  expected_best / subset_weights               melhor de N aleatorios
   variants.py   variants(especie, nivel, iv) -> 27           especie -> numeros
   score.py      score_variant(...) -> Cell                   o kernel
+  breakpoints.py chains_by_type(...) -> {tipo: [Rung]}        onde cai a linha de morte
+  matchups.py   worst_matchups(...) -> [Matchup]              o ranking por defensor
+  gauntlet.py   gauntlet(checkpoint, trainers) -> [int]       a sala inteira antes do lider
   run.py        python -m mon.run                            a camada 0, retomavel
   export.py     build_payload(...) -> 1.5 MB                 empacota a camada 0
   viewer.py     python -m mon.viewer                         constroi docs/index.html
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          196 testes, todos verdes
+tests/          253 testes, todos verdes
 ```
 
 Notas:
@@ -720,7 +723,8 @@ troca não consegue ver:
 - **O PP é dano total, não dano por golpe.** `BP × PP` é o teto de dano que um move entrega
   antes de secar. O extrasensory (80 BP × 30 PP = 2400) é o melhor move incondicional do
   pool acima de 80 BP, e é por causa do PP, não do BP.
-- **O dreno é a única cura.** absorb, mega-drain, giga-drain, leech-life e dream-eater curam
+- **Os itens não contam** (decisão, não mecânica do jogo): são permitidos em batalha e ficam de
+fora do modelo à mesma. **O dreno é a única cura.** absorb, mega-drain, giga-drain, leech-life e dream-eater curam
   50% do dano feito. Um giga-drain a recuperar 40% do HP num mon tanky pode valer mais que
   um move de 120 BP, porque o que está em causa é chegar ao fim da dungeon, não ganhar
   aquela troca. (O leaf storm não entra na comparação — **é um move de Gen 4**, não existe
@@ -819,6 +823,102 @@ variância entre runs, não a média — e a variância é outra pergunta.
 Sai mais barato e responde melhor: **21 h** contra as 232 h do guloso sobre o pool inteiro.
 O HP restante viaja com o move escolhido pelo win, não com o seu próprio máximo — escolhe-se o
 move pelo que ganha, não pelo que poupa.
+
+---
+
+### 3.6d O que me mata: a tabela de breakpoints
+
+A célula diz "ganho 96% das vezes". Não diz **o que me mata**, que é a pergunta que se faz a
+olhar para um adversário: *o thunderbolt mata este Gyarados, mas o spark também?*
+
+Por tipo, ordenam-se os moves desse tipo por dano e desce-se a escada até ao degrau onde a morte
+deixa de ser certa. Acima do degrau é proibido levar; o primeiro que falha é a margem.
+
+**A resposta depende do STAB, não do percentil.** Gyarados WATER/FLYING, lv70, `spd=86`, 161 de
+HP, contra um atacante mediano:
+
+| | dano | mata? |
+|---|---|---|
+| thunderbolt (95) | 208 | sim |
+| thunder-punch (75) | 164 | **roll, 12,5%** |
+| spark (65) | 144 | não |
+
+Vindo de um mon ELECTRIC (STAB) o spark faz 216 e mata sempre. Como os moves são sorteados do
+pool inteiro, um move ELECTRIC cai quase sempre num mon que não é ELECTRIC — por isso o **típico
+é sem STAB** (percentil 50) e o STAB pertence ao **pior caso** (percentil 90).
+
+No Koga, este Gyarados só tem **um tipo letal**: com `def=212` nem ROCK a 2x passa. É informação
+que a média de 0,96 não contém.
+
+**Escala:** `(espécie, perfil, split)` são 93 798 combinações, mas a cadeia só depende de
+`(tipos, hp, def, spd, nível adversário)` — **26 054 chaves**, 72% de colapso, 2,7 MB.
+
+### 3.6e Os piores matchups
+
+O vector por defensor já existe dentro do `score.py` e só se perde no `.mean()`. Recuperá-lo
+custa 4 ms com um moveset concreto.
+
+Gyarados `physical/def_tank/fast` com waterfall/earthquake/return dá 0,96 de média e **0,000**
+contra uma classe inteira de adversários — todos `special/*/bulky`, porque o perfil tem `def=212`
+e `spd=86`. A média não distingue um mon sólido de um mon com um buraco.
+
+Com moveset **sorteado** (19 moves) o pior matchup ainda ganha 5%: há quase sempre um move que
+serve. Com 3 moves fixos vai a zero exacto — não é azar, é o moveset não ter resposta nenhuma.
+
+---
+
+### 3.6f Um ginasio e uma fila, nao um embate
+
+O `dungeons.py` contava **batalhas obrigatorias**: Pewter = 1. Isso subestima
+duas vezes -- o lider tem 5 ou 6 mons, e antes dele esta a sala. Sem cura nem
+recarga de PP, o que conta e o numero de **mons seguidos**.
+
+| checkpoint | treinadores | mons na fila | so o lider | factor |
+|---|---|---|---|---|
+| brock | 2 | 7 | 5 | 1,4x |
+| misty | 3 | 8 | 5 | 1,6x |
+| surge | 4 | 11 | 6 | 1,8x |
+| erika | 8 | **24** | 6 | 4,0x |
+| koga | 7 | 20 | 6 | 3,3x |
+| sabrina | 8 | 21 | 6 | 3,5x |
+| blaine | 8 | 22 | 6 | 3,7x |
+| giovanni | 9 | **30** | 6 | 5,0x |
+
+**Conta-se a sala toda, por regra do desafio** — dentro de um ginásio luta-se
+com todos. Não se infere do mapa, e a distinção importa: o sinal que o mapa dá
+é o movimento, e em Kanto só um treinador de ginásio é spinner (o Juggler
+Kayden, no Koga). Por esse critério quase todos ficariam de fora, e era o que
+o `dungeons.py` dizia — Pewter = 1 embate, quando são 2 e 7 mons.
+
+São **49 treinadores e 143 mons** obrigatórios só dentro dos ginásios. O
+`unavoidable()` passou a incluí-los, o que levanta o piso do cenário mínimo:
+
+| | brock | erika | koga | elite-4 |
+|---|---|---|---|---|
+| mínimo antigo | 11 | 40 | 51 | 66 |
+| mínimo agora | 14 | 44 | 55 | 71 |
+| rota toda (o default, calibrado) | 19 | 58 | 70 | 86 |
+
+O default não muda — já contava todos os treinadores das áreas da rota, e é
+esse que está calibrado contra as runs reais (19 no Brock).
+
+**Se a fila mata depende de se faz OHKO, nao do comprimento.** Na Erika, ao
+nivel 58, contra os 24 mons:
+
+| mon | perfil | spe | só a líder | fila |
+|---|---|---|---|---|
+| gyarados BST 540 | physical/def_tank/fast | 177 | 1,0000 | 1,0000 |
+| wigglytuff BST 435 | physical/def_tank/**bulky** | 62 | 0,9915 | **0,4751** |
+| dugtrio BST 425 | physical/def_tank/bulky | 61 | 0,0000 | 0,0000 |
+
+Quem ultrapassa em Speed e mata de um nao leva dano nenhum e a fila nao custa
+nada. Quem nao mata de um leva um golpe por mon, e e ai que 24 mons separam
+0,99 de 0,48. O comprimento da fila so importa a quem ja estava a levar dano.
+
+*Medido com o adversario mediano a cada nivel, nao com as equipas reais: e a
+estrutura, nao o numero final. O numero final precisa do 4b corrigido.*
+
+---
 
 ### 3.7 As duas cargas de trabalho
 
@@ -999,6 +1099,99 @@ dava 0.0006 em vez de 0.1996. O agrupamento passou a ser aplicado **só no fim d
 que é onde serve de facto para comprimir o estado. Dentro da batalha a conta é exacta.
 
 ---
+
+## 4b. O dano que levo: corrigido
+
+**Era:** o defensor batia com um golpe neutro de 80, cego aos tipos. O
+`pool.incoming_damage` tratava a ignorância sobre os moves dele como
+*ausência de tipo* — e randomizado quer dizer com uma **distribuição
+conhecida** sobre os tipos, não sem tipo. Gyarados (WATER/FLYING, 4x a
+ELECTRIC) e Snorlax (NORMAL), mesmo BST e mesmo perfil, levavam exactamente o
+mesmo dano em todos os checkpoints.
+
+**É:** o [mon/incoming.py](mon/incoming.py), com o ruleset como o defines:
+
+- o adversário tem **4 moves sorteados** dos mesmos 194;
+- entre os que matam de um escolhe **à sorte**; o efeito secundário não entra
+  na escolha;
+- **o excesso é desperdiçado** — daqui o `lethal_cap(hp)`, o menor dano base
+  que mata nos 16 rolls;
+- itens em batalha: fora, por decisão.
+
+Do corte sai a forma do cálculo: depois de cortar só há **dois cenários
+distinguíveis**, e a troca resolve-se duas vezes.
+
+```
+p      = 1 - C(194-k, 4)/C(194, 4)   -- ele tirou um que me mata: levo o cap
+1 - p                                -- não tirou: levo o melhor de 4 do resto
+```
+
+Um escalar único não serve: com 13% de hipótese de morrer de um golpe e 87%
+de levar 40, a média dá 56, que o motor leria como "três golpes para me
+matar" — e nunca são três.
+
+**Efeito medido** (`physical/def_tank/fast`, banda 20+):
+
+| | brock | koga | elite-4 |
+|---|---|---|---|
+| gyarados win | 0,879 → **0,793** | 0,997 → 0,974 | 0,972 → **0,936** |
+| snorlax win | 0,941 → 0,895 | 0,998 → 0,996 | 0,978 → 0,959 |
+
+O mon 4x fraco é sempre mais penalizado, que é o que o modelo antigo não
+podia exprimir.
+
+### O `hp_left` passou a enganar sozinho — daí o terceiro número
+
+`hp_left` é condicional a ganhar. Com os golpes grandes a saírem para o
+cenário letal, as vitórias que restam ao mon frágil são as folgadas, e o
+número **sobe**:
+
+```
+koga  gyarados  hp_left 0,705 -> 0,792   (subiu)
+koga  snorlax   hp_left 0,699 -> 0,639   (desceu)
+```
+
+A célula ganhou por isso um terceiro valor, `risk` — a quota de sorteios em
+que ele tem um move que me mata de um. Sem ele a página, que ordena por
+`hp_left` em 7 dos 9 checkpoints, diria que o mon frágil está melhor.
+
+### Corrido
+
+180/180 partições, 39 MB, zero células em falta. O `risk` médio faz pico nos
+dois sítios com menos lead — 0,107 no Brock e 0,113 no Elite 4, contra 0,010
+no Surge — e a saturação do `win` partiu-se: o Surge era 1,000 e é 0,973.
+
+A página mostra os três números, mais dois painéis novos: **o que me mata**
+(breakpoints por tipo, com cursor de HP ferido) e **piores matchups**. O port
+JS dos dois está verificado contra o Python a 1e-9, e há um teste que corre a
+página construída num DOM mínimo em node e conta as linhas de cada painel —
+um erro em runtime rebentava o script todo e deixava a página em branco.
+
+**Custo do painel ao vivo:** o `incomingProfile` são 194x10 422 e não depende
+do meu moveset. Chamado por cada uma das seis chamadas do painel punha-o a
+1 889 ms; içado e em cache por mon, trocar um slot custa 74 ms.
+
+### Custo
+
+1,93x a célula (254 → 490 ms), **~40 h**. Duas optimizações pelo caminho: o
+STAB do defensor passou a ser uma matriz do `DefenderPool` (era uma lista
+Python de 10 422 por move, 2 M iterações por célula) e o `share`/`safe`
+agrupam-se pelos ~195 valores distintos de `left` em vez de chamar `comb` por
+defensor.
+
+### Armadilha que isto abriu
+
+O pool de onde saem os 4 moves **dele** não é o meu moveset. O
+`score_variant` e o `worst_matchups` levaram por isso um `threat_moves`: na
+camada 0 coincidem, mas no painel de moveset concreto passo 4 moves e ele
+continua a sortear dos 194. Sem o parâmetro, pedir um moveset de 1 move
+tornava o adversário inofensivo — apanhado por um teste que já existia
+(`test_knowing_one_move_is_the_pool_average`).
+
+O port JS divergia 1,1 pp porque o Python truncava o `safe` ao indexar a
+tabela de KO e o JS usava o float. O corte passou a ser explícito no
+`incoming_profile`, nos dois lados.
+
 
 ## 5. Próximos passos
 

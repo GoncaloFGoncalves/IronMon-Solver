@@ -115,6 +115,7 @@ def _compute(part: Partition) -> dict:
                              "profile": list(attacker.profile),
                              "win": round(cell.win, 4),
                              "hp_left": round(cell.hp_left, 4),
+                             "risk": round(cell.risk, 4),
                              "known": cell.known})
     return {"checkpoint": checkpoint, "level": level,
             "opponent_level": their_level, "rows": rows}

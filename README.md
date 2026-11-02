@@ -8,7 +8,7 @@ checkpoints da run.
 
 Não é uma tier-list de espécies. Em Kaizo os base stats são redistribuídos ao acaso preservando o
 BST, por isso "Snorlax" não é uma linha — são 27, uma por perfil de stats, vezes três bandas de IV.
-A tabela tem 281 394 células e levou 27 h a calcular.
+A tabela tem 281 394 células e levou 40 h a calcular.
 
 ---
 
@@ -20,19 +20,27 @@ banda de IV e perfil de stats.
 **O teu mon** — escolhes espécie, perfil e IV e vês a linha nos nove checkpoints.
 
 **Moveset concreto** — a tabela assume moves aleatórios, que é o que o Kaizo dá. Este painel
-calcula um moveset específico na hora, contra os mesmos 10 422 adversários, em menos de 20 ms.
-Serve para perguntar "e se ele tiver giga-drain em vez de surf".
+calcula um moveset específico na hora, contra os mesmos 10 422 adversários: ~74 ms a trocar um
+slot, ~395 ms a trocar de mon. Serve para perguntar "e se ele tiver giga-drain em vez de surf".
 
-As duas colunas:
+**O que me mata** — por tipo, os moves ordenados por dano até ao degrau onde a morte deixa de
+ser certa, com um cursor para perguntar a HP ferido em vez de a HP cheio.
+
+**Piores matchups** — os 15 adversários onde o teu moveset se sai pior, de 10 422. A média da
+célula não distingue um mon sólido de um mon com um buraco.
+
+As três colunas:
 
 - **Vitória** — probabilidade de ganhar a troca, em média sobre os 386 adversários ao nível daquele
   checkpoint.
 - **HP que sobra** — a fracção do máximo com que ficas quando ganhas. Numa dungeon não há cura nem
   recarga de PP, por isso o custo de ganhar importa tanto como ganhar.
+- **Risco** — a quota de sorteios em que o adversário tem, nos seus 4 slots, um move que te mata de
+  um golpe. É o número que o HP não vê: o HP é condicional a ganhares, por isso *sobe* quando o
+  risco passa a ser binário — as vitórias que te restam são as folgadas.
 
-Com vantagem de nível a vitória satura — na Erika quase tudo dá 1.000 — e só o HP ordena. A página
-ordena por vitória no Brock e no Elite 4, que são os dois checkpoints onde se perde, e por HP nos
-outros sete.
+O risco faz pico nos dois sítios onde a vantagem de nível é menor: 0,107 no Brock e 0,113 no
+Elite 4, contra 0,010 no Surge.
 
 ---
 
@@ -44,6 +52,7 @@ outros sete.
 | **Perfis de stats** | três pares simétricos — (Atk, SpA), (Def, SpD), (HP, Speed) — cada um híbrido ou inclinado para um lado. 27 combinações, todas a somar exactamente o BST. |
 | **Níveis** | simulados a partir dos 345 treinadores do mapa de FRLG, com a fórmula de EXP de Gen 3 e os exp yields da disassembly do jogo. Calibrados contra runs reais. |
 | **Dano** | distribuição exacta dos 16 rolls de Gen 3, com cada golpe truncado sozinho. Nada de valores esperados: a média diz "2HKO" onde a probabilidade real é 0.4%. |
+| **Dano recebido** | o adversário tem 4 moves sorteados dos mesmos 194 e escolhe à sorte entre os que matam de um; o excesso é desperdiçado. Daí duas situações distinguíveis, e a troca resolve-se duas vezes. |
 | **Moveset** | não se escolhe, calha. O valor é o esperado do melhor de N moves aleatórios, por estatística de ordem. |
 | **Habilidades** | só as que têm mecânica modelada produzem swing; as outras valem zero em vez de valerem um palpite. |
 
@@ -61,7 +70,7 @@ Precisa de Python 3.12 e numpy.
 python -m mon.run --status      # quanto falta calcular
 python -m mon.run               # a camada 0; Ctrl+C a qualquer momento
 python -m mon.viewer            # reconstrói docs/index.html
-python -m pytest tests/         # 196 testes
+python -m pytest tests/         # 253 testes
 ```
 
 O batch leva cerca de 27 h e corre aos pedaços: cada partição escreve ao acabar e uma corrida nova
@@ -78,7 +87,7 @@ construída, em `docs/`.
 mon/             o solver
 viewer/          a página: template + motor de cálculo ao vivo
 docs/            a página construída, de onde o GitHub Pages a serve
-tests/           196 testes
+tests/           253 testes
 CONTEXT.md       especificação, decisões e bugs encontrados
 GRUPOS.md        composição dos grupos de moves e habilidades
 ```
@@ -99,6 +108,9 @@ Dentro do `mon/`:
   trainers.py    os 345 treinadores do mapa, por split
   levels.py      nível esperado em cada checkpoint
   score.py       o kernel
+  breakpoints.py o que me mata, por tipo
+  matchups.py    o ranking por defensor
+  gauntlet.py    a sala inteira antes do lider
   run.py         a camada 0, retomável
   viewer.py      constrói docs/index.html
 ```

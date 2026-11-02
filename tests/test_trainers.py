@@ -79,6 +79,21 @@ def test_moving_trainers_are_flagged():
     assert any(t.name == "Brock" for t in forcados)
 
 
+def test_gym_trainers_are_mandatory_by_rule_not_by_movement():
+    # Regra do desafio: dentro de um ginasio luta-se com todos. O Camper Liam
+    # e estatico e pelo criterio do movimento ficaria de fora.
+    from mon.gauntlet import GYM_AREAS
+    from mon.trainers import load_trainers, unavoidable
+    todos = load_trainers()
+    liam = [t for t in todos if t.name == "Camper Liam"][0]
+    assert not liam.spinner and not liam.walker
+    forcados = {(t.area, t.name) for t in unavoidable(todos)}
+    assert (liam.area, liam.name) in forcados
+    for area in GYM_AREAS.values():
+        na_sala = [t for t in todos if t.area == area]
+        assert all((t.area, t.name) in forcados for t in na_sala)
+
+
 def test_the_splits_are_the_same_checkpoints_the_rest_of_the_code_uses():
     # Tres modulos com tres grafias dos mesmos 9 checkpoints e um bug a
     # espera. O `checkpoints.py` e a fonte; este teste falha se divergirem.

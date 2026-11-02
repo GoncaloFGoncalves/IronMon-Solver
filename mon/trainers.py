@@ -167,10 +167,17 @@ def trainers_before(split: str, trainers) -> list[Trainer]:
 def unavoidable(trainers) -> list[Trainer]:
     """Os treinadores que a rota obriga, e so esses.
 
-    Aproximacao, nos dois sentidos: um spinner com bom temporizacao evita-se,
-    e um treinador estatico num corredor de um tile nao se evita. O mapa nao
-    marca "obrigatorio", marca **movimento**, e e o melhor sinal que tem.
+    **Dentro de um ginasio entram todos, por regra do desafio** -- nao por
+    inferencia do mapa. Era preciso dize-lo porque o sinal que o mapa da e o
+    movimento, e em Kanto so um treinador de ginasio e spinner: pelo criterio
+    do movimento quase todos ficariam de fora, o que e falso.
+
+    Fora dos ginasios continua a ser aproximacao nos dois sentidos: um spinner
+    com boa temporizacao evita-se, e um estatico num corredor de um tile nao.
     """
+    from mon.gauntlet import GYM_AREAS
+    gyms = frozenset(GYM_AREAS.values())
     return [trainer for trainer in trainers
-            if trainer.spinner or trainer.walker
+            if trainer.area in gyms
+            or trainer.spinner or trainer.walker
             or trainer.name in LEADERS or trainer.name.startswith("Rival")]

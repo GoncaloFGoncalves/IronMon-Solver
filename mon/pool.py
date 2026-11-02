@@ -27,8 +27,9 @@ class DefenderPool:
         self.special_defense = np.array([d.special_defense for d in defenders],
                                         dtype=np.int64)
         self.speed = np.array([d.speed for d in defenders], dtype=np.int64)
-        # O adversario bate pelo lado mais forte, com um golpe neutro de 80:
-        # os moves dele sao randomizados e nao constam do mapa.
+        # Quem bate pelo lado mais forte. O dano que ele me faz esta no
+        # `incoming.py`, com os moves reais: o golpe neutro de 80 que aqui
+        # estava era cego aos tipos (CONTEXT.md 4b).
         self.physical = np.array([d.attack >= d.special_attack for d in defenders])
         self.attack = np.where(self.physical,
                                [d.attack for d in defenders],
@@ -36,6 +37,15 @@ class DefenderPool:
         self.effectiveness = np.array(
             [[GEN_2_TO_5.effectiveness(attacking, d.types) for d in defenders]
              for attacking in TYPES_GEN_2_TO_5], dtype=np.float64)
+        # STAB do **defensor**, para quando e ele a bater (incoming.py). Uma
+        # vez por checkpoint em vez de uma vez por move e por atacante: eram
+        # 2 milhoes de iteracoes Python por celula.
+        self.stab = np.array(
+            [[1.5 if attacking in d.types else 1.0 for d in defenders]
+             for attacking in TYPES_GEN_2_TO_5], dtype=np.float64)
+        self.attack_both = np.array([d.attack for d in defenders], dtype=np.int64)
+        self.special_attack = np.array([d.special_attack for d in defenders],
+                                       dtype=np.int64)
 
     def damage_matrix(self, attacker: Variant, moves) -> np.ndarray:
         """`(move, defensor)` -> dano antes do roll, em inteiros do jogo."""
@@ -52,9 +62,3 @@ class DefenderPool:
                           ).astype(np.int64)
         return out
 
-    def incoming_damage(self, attacker: Variant) -> np.ndarray:
-        """O que cada defensor me faz por turno."""
-        factor = 2 * self.defenders[0].level // 5 + 2
-        defense = np.where(self.physical, attacker.defense,
-                           attacker.special_defense)
-        return factor * 80 * self.attack // defense // 50 + 2

@@ -233,6 +233,7 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
         <button type="button" data-metric="auto" aria-pressed="true">Automático</button>
         <button type="button" data-metric="win" aria-pressed="false">Vitória</button>
         <button type="button" data-metric="hp" aria-pressed="false">HP</button>
+        <button type="button" data-metric="risk" aria-pressed="false">Risco</button>
       </div>
     </div>
   </div>
@@ -245,6 +246,7 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
           <th class="rank">#</th><th>Mon</th><th class="num">BST</th><th>Perfil</th>
           <th class="num" data-sort="win">Vitória</th>
           <th class="num" data-sort="hp">HP</th>
+          <th class="num" data-sort="risk">Risco</th>
           <th class="num">Moves</th>
         </tr></thead>
         <tbody id="rankBody"></tbody>
@@ -273,7 +275,7 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
         <span><i class="key" style="background:var(--fg-dim)"></i>HP que sobra</span>
       </div>
       <div class="scroll"><table>
-        <thead><tr><th>Checkpoint</th><th class="num">Nível</th><th class="num">Vitória</th><th class="num">HP</th></tr></thead>
+        <thead><tr><th>Checkpoint</th><th class="num">Nível</th><th class="num">Vitória</th><th class="num">HP</th><th class="num">Risco</th></tr></thead>
         <tbody id="runBody"></tbody>
       </table></div>
     </section>
@@ -298,18 +300,56 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
         <b id="msHp">—</b>
         <span class="vs" id="msHpVs"></span>
       </div>
+      <div class="big">
+        <span class="lab">Risco de 1 golpe</span>
+        <b id="msRisk">—</b>
+        <span class="vs" id="msRiskVs"></span>
+      </div>
       <div class="timing" id="msTime"></div>
     </div>
   </section>
+
+  <div class="panels">
+    <section class="panel">
+      <h2>O que me mata <span id="bpWhere"></span></h2>
+      <p class="note">Por tipo, os moves ordenados por dano até ao degrau onde a morte deixa de ser certa. Acima do degrau é proibido levar; o primeiro que falha é a margem. O adversário típico é o percentil 50 sem STAB, porque um move de um tipo cai quase sempre num mon que não é desse tipo.</p>
+      <div class="field hpbox">
+        <label for="bpHp">HP a que pergunto</label>
+        <input type="range" id="bpHp" min="1" max="100" value="100">
+        <output id="bpHpVal"></output>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>Tipo</th><th class="num">×</th><th>Último que mata sempre</th><th>A margem</th><th class="num">Matam</th></tr></thead>
+        <tbody id="bpBody"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <h2>Piores matchups <span>com o moveset concreto</span></h2>
+      <p class="note">A média da célula não distingue um mon sólido de um mon com um buraco. Aqui estão os 15 adversários onde este moveset se sai pior, de 10 422.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Adversário</th><th>Perfil</th><th class="num">Vitória</th><th class="num">Bato</th><th class="num">Levo</th></tr></thead>
+        <tbody id="wmBody"></tbody>
+      </table></div>
+    </section>
+  </div>
 
   <footer>
     <p><b>Vitória</b> é a probabilidade de ganhar a troca, em média sobre os 386 adversários ao nível daquele checkpoint. <b>HP</b> é a fracção do teu máximo com que ficas quando ganhas, e é a moeda da dungeon, onde não há cura nem recarga de PP.</p>
     <p>Com vantagem de nível a vitória satura: na Erika quase tudo dá 1.000 e só o HP ordena. Por isso <b>Automático</b> ordena por vitória no Brock e no Elite 4, os dois checkpoints onde se perde, e por HP nos outros sete.</p>
     <p>O limite de BST por omissão é 550: acima disso o mon não pode ser teu, só adversário. Carrega numa linha do ranking para a abrir no painel do lado.</p>
+    <p><b>Risco</b> é a quota de sorteios em que o adversário tem, nos seus 4 slots, um move que te mata de um golpe. É o número que o HP não vê: o HP é condicional a ganhares, por isso <i>sobe</i> quando o risco passa a ser binário — as vitórias que te restam são as folgadas.</p>
     <p>Gerado de <code>data/camada0</code>, 180 partições.</p>
   </footer>
 </div>
 
+<style>
+.hpbox { margin-bottom: 10px; }
+.hpbox input[type=range] { width: 100%; }
+.hpbox output { font-variant-numeric: tabular-nums; color: var(--fg-dim); font-size: 12px; }
+tr.quiet { opacity: .45; }
+td.num.bad { color: var(--bad, #c5503f); font-weight: 600; }
+</style>
 <script>
 /*__ENGINE__*/
 const DATA = /*__DATA__*/null;
@@ -323,6 +363,8 @@ function decode(encoded) {
 
 const WIN = decode(DATA.win);
 const HP = decode(DATA.hp);
+const RISK = decode(DATA.risk);
+const MISSING = 0xFFFF;
 const CPS = DATA.checkpoints;
 const S = DATA.species.length;
 const B = DATA.bands.length;
@@ -342,7 +384,12 @@ const state = {
   metric: "auto", limit: 40,
   pick: { s: 142, off: OFF[0], def: DEF[0], tempo: TEMPO[0], band: 2 },
   moves: ["body-slam", "surf", "earthquake", "ice-beam"],
+  bpHp: 100,
 };
+
+// O atacante de referencia por checkpoint: percentil 50 do Atk/SpA do pool ao
+// nivel adversario. Viaja no payload porque depende do pool inteiro.
+const THREATS = DATA.threats;
 
 const metricNow = () => state.metric !== "auto" ? state.metric
   : (DANGER.has(CPS[state.cp].name) ? "win" : "hp");
@@ -389,19 +436,30 @@ function ranked() {
       if (state.def && prof[1] !== state.def) continue;
       if (state.tempo && prof[2] !== state.tempo) continue;
       const i = cellIndex(state.cp, s, state.band, p);
-      out.push({ s, p, sp, prof, win: WIN[i], hp: HP[i] });
+      out.push({ s, p, sp, prof, win: WIN[i], hp: HP[i], risk: RISK[i] });
     }
   }
+  // O risco ordena ao contrario dos outros dois: menos e melhor.
   out.sort((a, b) => metric === "win" ? (b.win - a.win || b.hp - a.hp)
-                                      : (b.hp - a.hp || b.win - a.win));
+                   : metric === "risk" ? (a.risk - b.risk || b.win - a.win)
+                   : (b.hp - a.hp || b.win - a.win));
   return out;
 }
 
 function pill(value, kind) {
-  const v = value / SCALE;
-  const cls = kind === "win" ? (v >= 0.95 ? "good" : v >= 0.6 ? "warn" : "bad")
-                             : (v >= 0.5 ? "good" : v >= 0.25 ? "warn" : "bad");
   const el = document.createElement("span");
+  if (value === MISSING) {
+    el.className = "pill";
+    el.textContent = "—";
+    el.title = "esta celula vem de uma corrida sem este numero";
+    return el;
+  }
+  const v = value / SCALE;
+  // O risco e o unico em que menos e melhor: e a quota de sorteios em que o
+  // adversario tem um move que me mata de um golpe.
+  const cls = kind === "win" ? (v >= 0.95 ? "good" : v >= 0.6 ? "warn" : "bad")
+            : kind === "risk" ? (v <= 0.05 ? "good" : v <= 0.15 ? "warn" : "bad")
+            : (v >= 0.5 ? "good" : v >= 0.25 ? "warn" : "bad");
   el.className = "pill " + cls;
   el.textContent = v.toFixed(3);
   return el;
@@ -420,8 +478,9 @@ function renderRank() {
   const body = $("rankBody");
   const known = DATA.known[state.cp];
   const chosen = profileIndex(state.pick.off, state.pick.def, state.pick.tempo);
+  const nomes = { win: "vitória", hp: "HP", risk: "risco (menos é melhor)" };
   $("rankNote").textContent = all.length.toLocaleString("pt-PT")
-    + " variantes · ordenado por " + (metric === "win" ? "vitória" : "HP");
+    + " variantes · ordenado por " + nomes[metric];
   document.querySelectorAll("#rank th[data-sort]").forEach(th =>
     th.classList.toggle("sorted", th.dataset.sort === metric));
 
@@ -429,7 +488,7 @@ function renderRank() {
   if (!all.length) {
     const tr = document.createElement("tr");
     const td = cell("Nenhuma variante passa estes filtros.", "empty");
-    td.colSpan = 7;
+    td.colSpan = 8;
     tr.append(td);
     body.append(tr);
   }
@@ -450,8 +509,10 @@ function renderRank() {
     win.append(pill(r.win, "win"));
     const hp = cell(undefined, "num");
     hp.append(pill(r.hp, "hp"));
+    const risk = cell(undefined, "num");
+    risk.append(pill(r.risk, "risk"));
     tr.append(cell(n + 1, "rank"), mon, cell(r.sp[3], "num"),
-              cell(r.prof.join(" · "), "prof"), win, hp,
+              cell(r.prof.join(" · "), "prof"), win, hp, risk,
               cell(known[r.s], "num"));
     tr.onclick = () => {
       state.pick = { s: r.s, off: r.prof[0], def: r.prof[1], tempo: r.prof[2], band: state.band };
@@ -472,7 +533,7 @@ function series() {
   const p = profileIndex(state.pick.off, state.pick.def, state.pick.tempo);
   return CPS.map((cp, c) => {
     const i = cellIndex(c, state.pick.s, state.pick.band, p);
-    return { cp, win: WIN[i], hp: HP[i] };
+    return { cp, win: WIN[i], hp: HP[i], risk: RISK[i] };
   });
 }
 
@@ -490,9 +551,12 @@ function renderPick() {
   sub.className = "types";
   sub.textContent = " " + sp[2].join("/") + " · BST " + sp[3]
     + (sp[3] <= 550 ? "" : " · acima de 550, só como adversário");
+  const risky = data.reduce((a, b) => a.risk >= b.risk ? a : b);
   const line = document.createElement("p");
   line.textContent = "Pior checkpoint: " + worst.cp.name + ", " + show(worst.win)
-    + " de vitória. HP médio ao longo da run: " + meanHp.toFixed(3) + ".";
+    + " de vitória. HP médio ao longo da run: " + meanHp.toFixed(3)
+    + ". Maior risco de morrer de um golpe: " + risky.cp.name + ", "
+    + show(risky.risk) + ".";
   verdict.append(title, sub, line);
 
   const W = 320, H = 112, padL = 6, padR = 6, padT = 10, padB = 18;
@@ -530,7 +594,9 @@ function renderPick() {
     win.append(pill(d.win, "win"));
     const hp = cell(undefined, "num");
     hp.append(pill(d.hp, "hp"));
-    tr.append(name, cell(d.cp.level + " vs " + d.cp.opponent, "num"), win, hp);
+    const risk = cell(undefined, "num");
+    risk.append(pill(d.risk, "risk"));
+    tr.append(name, cell(d.cp.level + " vs " + d.cp.opponent, "num"), win, hp, risk);
     body.append(tr);
   }
 }
@@ -561,6 +627,18 @@ function attackerNow() {
   return Object.assign({}, stats, { level, types: sp[2] });
 }
 
+const incomingCache = new Map();
+
+function profileFor(attacker, pool) {
+  const key = [state.cp, state.pick.s, state.pick.band, state.pick.off,
+               state.pick.def, state.pick.tempo].join("|");
+  if (!incomingCache.has(key)) {
+    if (incomingCache.size > 24) incomingCache.clear();
+    incomingCache.set(key, incomingProfile(attacker, pool, MOVES, PHYSICAL));
+  }
+  return incomingCache.get(key);
+}
+
 function renderMoveset() {
   const chosen = state.moves.filter(Boolean).map(n => MOVE_BY_NAME.get(n));
   const cp = CPS[state.cp];
@@ -588,12 +666,19 @@ function renderMoveset() {
   const started = performance.now();
   const attacker = attackerNow();
   const pool = poolFor(state.cp);
-  const full = scoreMoveset(attacker, chosen, pool, PHYSICAL);
+  // MOVES e o pool de onde saem os 4 moves DELE: o que eu sei nao muda o que
+  // ele pode ter sorteado. Sem este argumento, pedir 1 move meu tornava o
+  // adversario inofensivo.
+  // Uma vez so, e em cache: nao depende do meu moveset, so do mon e do
+  // checkpoint. Recalcula-lo em cada chamada punha o painel a 1.9 s; sem
+  // cache, trocar um slot custava 358 ms em vez de 20.
+  const profile = profileFor(attacker, pool);
+  const full = scoreMoveset(attacker, chosen, pool, PHYSICAL, MOVES, profile);
 
   for (const move of chosen) {
     const without = chosen.filter(m => m !== move);
     const other = without.length
-      ? scoreMoveset(attacker, without, pool, PHYSICAL)
+      ? scoreMoveset(attacker, without, pool, PHYSICAL, MOVES, profile)
       : { win: 0, hpLeft: 0 };
     const drop = full.win - other.win;
     const tr = document.createElement("tr");
@@ -609,9 +694,82 @@ function renderMoveset() {
   const i = cellIndex(state.cp, state.pick.s, state.pick.band, p);
   $("msWin").textContent = full.win.toFixed(4);
   $("msHp").textContent = full.hpLeft.toFixed(4);
+  $("msRisk").textContent = full.risk.toFixed(4);
   $("msWinVs").textContent = "tabela (moves aleatórios): " + show(WIN[i]);
   $("msHpVs").textContent = "tabela (moves aleatórios): " + show(HP[i]);
+  $("msRiskVs").textContent = "tabela: " + show(RISK[i]);
   $("msTime").textContent = took + " ms · " + pool.rows.length.toLocaleString("pt-PT") + " adversários";
+  renderWorst(attacker, chosen, pool, profile);
+}
+
+/* ---- piores matchups ---- */
+
+function renderWorst(attacker, chosen, pool, profile) {
+  const body = $("wmBody");
+  body.innerHTML = "";
+  if (!chosen.length) return;
+  const rows = worstMatchups(attacker, chosen, pool, PHYSICAL, MOVES, 15,
+                             profile);
+  for (const r of rows) {
+    const sp = DATA.species[Math.floor(r.index / P)];
+    const prof = DATA.profiles[r.index % P];
+    const tr = document.createElement("tr");
+    const mon = cell();
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = sp[1];
+    const types = document.createElement("span");
+    types.className = "types";
+    types.textContent = " " + sp[2].join("/");
+    mon.append(name, types);
+    const win = cell(undefined, "num");
+    win.append(pill(Math.round(r.win * SCALE), "win"));
+    tr.append(mon, cell(prof.join(" · "), "prof"), win,
+              cell(r.dealt, "num"), cell(r.taken, "num"));
+    body.append(tr);
+  }
+}
+
+/* ---- o que me mata ---- */
+
+const TYPES_ALL = [...new Set(MOVES.map(m => m.type))].sort();
+
+function renderBreak() {
+  const attacker = attackerNow();
+  const hp = Math.max(1, Math.round(attacker.hp * state.bpHp / 100));
+  const level = CPS[state.cp].opponent;
+  const threat = { attack: THREATS[state.cp].a, specialAttack: THREATS[state.cp].a, stab: 1.0 };
+  $("bpWhere").textContent = "nível " + attacker.level + " vs " + level
+    + " · " + hp + " de " + attacker.hp + " HP";
+  $("bpHpVal").textContent = state.bpHp + "% · " + hp + " HP";
+
+  const body = $("bpBody");
+  body.innerHTML = "";
+  const linhas = [];
+  for (const kind of TYPES_ALL) {
+    const { rungs, effectiveness } = chain(attacker, MOVES, kind, threat,
+                                           level, EFFECT, PHYSICAL, hp);
+    const [last, first] = breakpointOf(rungs);
+    linhas.push({ kind, effectiveness, last, first,
+                  matam: rungs.filter(r => r.ohko >= 1).length,
+                  total: rungs.length });
+  }
+  // Os tipos que matam primeiro: e a ordem por que se olha para isto.
+  linhas.sort((a, b) => b.matam - a.matam || b.effectiveness - a.effectiveness);
+  for (const l of linhas) {
+    const tr = document.createElement("tr");
+    if (!l.matam) tr.className = "quiet";
+    const ult = l.last ? l.last.move + " (" + l.last.power + ")" : "nenhum";
+    const marg = l.first
+      ? l.first.move + " · " + (l.first.ohko * 100).toFixed(0) + "%"
+      : "todos matam";
+    const conta = cell(l.matam + " / " + l.total, "num");
+    if (l.matam) conta.className += " bad";
+    tr.append(cell(l.kind.toLowerCase(), "types"),
+              cell("×" + l.effectiveness, "num"),
+              cell(ult, l.last ? "name" : "empty"), cell(marg), conta);
+    body.append(tr);
+  }
 }
 
 function buildSlots() {
@@ -642,6 +800,7 @@ function render() {
   renderRank();
   renderPick();
   renderMoveset();
+  renderBreak();
 }
 
 function init() {
@@ -666,6 +825,7 @@ function init() {
   syncPicker();
   buildSlots();
 
+  $("bpHp").oninput = (e) => { state.bpHp = +e.target.value; renderBreak(); };
   $("bst").oninput = (e) => { state.bst = +e.target.value; state.limit = 40; render(); };
   $("band").onchange = (e) => { state.band = +e.target.value; renderRank(); };
   for (const key of ["off", "def", "tempo"]) {
