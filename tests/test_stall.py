@@ -102,11 +102,11 @@ def test_a_wall_i_can_hurt_is_not_a_wall():
 
 def test_no_coverage_chance_is_hypergeometric():
     from math import comb
-    # Dos 194 moves de dano, 72 nao afectam BUG/GHOST (NORMAL e FIGHTING).
-    assert abs(no_coverage_chance(72, 194, 4) - comb(72, 4) / comb(194, 4)) < 1e-15
-    assert no_coverage_chance(72, 194, 4) > no_coverage_chance(72, 194, 10)
+    # Dos 193 moves de dano aprendiveis, 71 nao afectam BUG/GHOST.
+    assert abs(no_coverage_chance(71, 193, 4) - comb(71, 4) / comb(193, 4)) < 1e-15
+    assert no_coverage_chance(71, 193, 4) > no_coverage_chance(71, 193, 10)
     # Mais moves conhecidos que inuteis no pool: impossivel ficar sem nada.
-    assert no_coverage_chance(3, 194, 10) == 0.0
+    assert no_coverage_chance(3, 193, 10) == 0.0
 
 
 def test_a_wall_with_no_damaging_moves_costs_exactly_one_struggle():

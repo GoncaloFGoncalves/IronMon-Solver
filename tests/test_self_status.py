@@ -48,7 +48,7 @@ def test_a_non_gym_counts_only_the_mandatory_path(trainers):
 
 def test_the_per_mon_chance_is_derived_from_the_move_pool():
     # O 0.25 que aqui estava era um palpite. Isto re-deriva-o dos dados: dos
-    # 194 moves de dano, 27 dao um status que o Guts aproveita.
+    # 193 moves de dano aprendiveis, 27 dao um status que o Guts aproveita.
     from math import comb
     from statistics import mean
     from mon.upside import TURNS
@@ -74,7 +74,8 @@ def test_the_chance_grows_with_the_dungeon():
 
 
 def test_one_mon_is_the_floor_and_zero_is_an_error():
-    assert self_status(1) == STATUS_PER_MON
+    # `1 - (1-p)**1` nao e exactamente `p` em vírgula flutuante.
+    assert abs(self_status(1) - STATUS_PER_MON) < 1e-15
     with pytest.raises(ValueError):
         self_status(0)
 

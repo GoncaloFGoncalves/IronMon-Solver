@@ -6,11 +6,11 @@ dois derruba o outro -- e por isso nao cabe no `vector.py`, que corta aos 6.
 O caso canonico e o Shedinja, e ele e **unico**: a Wonder Guard esta banida
 em todos os mons menos nele, logo e o unico do jogo a quem so os
 super-efetivos tocam. Contra BUG/GHOST isso deixa 5 tipos uteis -- FLYING,
-ROCK, GHOST, FIRE, DARK -- e **156 dos 194 moves de dano nao servem**. Com 4
+ROCK, GHOST, FIRE, DARK -- e **155 dos 193 moves de dano nao servem**. Com 4
 moves sorteados sao 41% de hipotese de nao ter resposta; com 10 conhecidos,
-11%; com 19, 1.3%.
+10.5%; com 19, 1.2%.
 
-Sem a habilidade, so o tipo ja o torna imune a NORMAL e FIGHTING, 72 dos 194.
+Sem a habilidade, so o tipo ja o torna imune a NORMAL e FIGHTING, 71 dos 193.
 O modelo e o do caso geral -- qualquer adversario cujo dano recebido seja
 zero -- mas na pratica o Shedinja e quem o ocupa.
 
@@ -142,8 +142,8 @@ def no_coverage_chance(useless: int, pool: int, known: int) -> float:
     """P(nenhum dos `known` moves sorteados ferir esta parede).
 
     Hipergeometrico: tirados `known` de `pool`, a hipotese de **todos** virem
-    dos `useless` que nao a afectam. Contra BUG/GHOST sao 72 de 194 pelo
-    tipo (1.8% com 4 moves) ou 156 de 194 com Wonder Guard (41%).
+    dos `useless` que nao a afectam. Contra BUG/GHOST sao 71 de 193 pelo
+    tipo (1.7% com 4 moves) ou 155 de 193 com Wonder Guard (41%).
     """
     if known > useless:
         return 0.0

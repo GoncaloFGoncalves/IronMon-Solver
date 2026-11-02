@@ -79,7 +79,7 @@ Precisa de Python 3.12 e numpy.
 python -m mon.run --status      # quanto falta calcular
 python -m mon.run               # a camada 0; Ctrl+C a qualquer momento
 python -m mon.viewer            # reconstrói docs/index.html
-python -m pytest tests/         # 301 testes
+python -m pytest tests/         # 303 testes
 ```
 
 O batch leva cerca de 27 h e corre aos pedaços: cada partição escreve ao acabar e uma corrida nova
@@ -96,7 +96,7 @@ construída, em `docs/`.
 mon/             o solver
 viewer/          a página: template + motor de cálculo ao vivo
 docs/            a página construída, de onde o GitHub Pages a serve
-tests/           301 testes
+tests/           303 testes
 CONTEXT.md       especificação, decisões e bugs encontrados
 GRUPOS.md        composição dos grupos de moves e habilidades
 ```

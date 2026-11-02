@@ -29,16 +29,17 @@ GUTS_WINDOW_TURNS = int(1 / BURN_RESIDUAL)
 # inflingir obrigaria a itens ou a um mon selvagem, os dois fora das regras
 # dentro de uma dungeon.
 #
-# Por **mon adversario**, derivado do pool e nao estimado: dos 194 moves de
-# dano, 27 dao um status que o Guts aproveita (burn, poison, paralysis).
+# Por **mon adversario**, derivado do pool e nao estimado: dos 193 moves de
+# dano aprendiveis, 27 dao um status que o Guts aproveita (burn, poison,
+# paralysis).
 #
-#   P(ter >=1 nos 4 slots)  = 1 - C(167,4)/C(194,4) = 0.4537
+#   P(ter >=1 nos 4 slots)  = 1 - C(166,4)/C(193,4) = 0.4555
 #   P(acertar em 3 turnos)  = media de 1-(1-c)^3    = 0.5065
 #
 # Ha teste que re-deriva este numero dos dados. O 0.25 que aqui estava era um
 # palpite e calhou perto -- mas era por **dungeon**, nao por mon, e e nisso
 # que estava errado: numa fila de 20 mons o status e praticamente certo.
-STATUS_PER_MON = 0.2298
+STATUS_PER_MON = 0.2307
 
 
 @dataclass(frozen=True)

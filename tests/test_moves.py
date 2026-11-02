@@ -132,3 +132,18 @@ def test_triple_kick_escalates_instead_of_repeating():
         hits={"triple-kick": (3, 3)})
     move = built[0]
     assert move.power * 3 == 60
+
+
+def test_struggle_is_not_in_the_pool():
+    # O Struggle nao se aprende: nao pode sair num moveset meu nem nos 4
+    # slots do adversario. Estava no pool dos 194 e nao devia -- e ainda por
+    # cima como NORMAL de 50, quando em Gen 3 e typeless (mon/stall.py).
+    from mon.veekun import load_moves
+    nomes = {m.name for m in load_moves()}
+    assert "struggle" not in nomes
+
+
+def test_the_damaging_pool_is_193():
+    from mon.veekun import load_moves
+    pool = [m for m in load_moves() if m.kind == "power" and m.power]
+    assert len(pool) == 193

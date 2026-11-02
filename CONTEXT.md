@@ -178,7 +178,7 @@ mon/
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          301 testes, todos verdes
+tests/          303 testes, todos verdes
 ```
 
 Notas:
@@ -661,10 +661,10 @@ antes de estar errado no valor: era por dungeon, quando a quantidade é por
 mon adversário. Derivado do pool (há teste que o re-deriva):
 
 ```
-dos 194 moves de dano, 27 dão status que o Guts aproveita (burn/poison/paralysis)
-  P(ter >=1 nos 4 slots)  = 1 - C(167,4)/C(194,4) = 0,4537
+dos 193 moves de dano aprendíveis, 27 dão status que o Guts aproveita
+  P(ter >=1 nos 4 slots)  = 1 - C(166,4)/C(193,4) = 0,4555
   P(acertar em 3 turnos)  = média de 1-(1-c)^3    = 0,5065
-  --> STATUS_PER_MON = 0,2298
+  --> STATUS_PER_MON = 0,2307
 ```
 
 Mas usar `1-(1-p)^mons` como viabilidade — a hipótese de **chegar a ter**
@@ -1003,14 +1003,14 @@ Logo ficar sem PP **não é perder**: o meu Struggle atinge o Shedinja e 1 de
 HP morre com qualquer coisa. Quem fica sem PP primeiro resolve o embate, nos
 dois sentidos — se for o dele, ele dá Struggle, leva 1/4 de recuo e morre.
 
-**A escala do problema.** Contra BUG/GHOST com Wonder Guard, 156 dos 194
+**A escala do problema.** Contra BUG/GHOST com Wonder Guard, 155 dos 193
 moves de dano não servem:
 
 | moves conhecidos | P(nenhum super-efetivo) |
 |---|---|
-| 4 | **0,415** |
-| 10 (Misty) | 0,107 |
-| 19 (Koga) | 0,013 |
+| 4 | **0,413** |
+| 10 (Misty) | 0,105 |
+| 19 (Koga) | 0,012 |
 | 24 (Elite 4) | 0,004 |
 
 **Mas o stall não funciona.** A conta não é a corrida de PP — é que se morre
@@ -1415,6 +1415,36 @@ tornava o adversário inofensivo — apanhado por um teste que já existia
 O port JS divergia 1,1 pp porque o Python truncava o `safe` ao indexar a
 tabela de KO e o JS usava o float. O corte passou a ser explícito no
 `incoming_profile`, nos dois lados.
+
+
+## 4c. O Struggle estava no pool, e a camada 0 em disco ainda o tem
+
+O `load_moves` devolvia **194** moves de dano e um deles era o Struggle. Não
+se aprende: não pode sair num moveset meu nem nos 4 slots do adversário, logo
+não pertence ao pool de onde se sorteia. E ainda por cima vinha como NORMAL
+de 50, quando em Gen 3 é typeless.
+
+Apareceu ao verificar outra coisa — se implementar o Struggle no `sequence.py`
+obrigava a recomputar (não obriga: o `sequence.py` é importado só pelo
+`stall.py` e pelos testes, e a camada 0 ignora PP). O pool é agora **193**,
+com um `NOT_LEARNABLE` explícito e teste.
+
+**Impacto medido**, pool de 194 contra 193:
+
+| | win | hp_left | risk |
+|---|---|---|---|
+| gyarados @ brock | −0,0003 | +0,0003 | +0,0005 |
+| snorlax @ elite-4 | −0,0001 | 0,0000 | +0,0001 |
+
+**A camada 0 em disco foi calculada com os 194**, e não a recomputei: são
+40 h para mexer na quarta casa decimal. Fica como inconsistência conhecida —
+o motor ao vivo da página usa 193 e a tabela usa 194, e as duas divergem no
+máximo 0,0003. **Corrige-se na próxima recomputação que houver por outra
+razão.**
+
+Constantes que dependiam de 194 e foram refeitas: o `STATUS_PER_MON` passou
+de 0,2298 a **0,2307** (`1 - C(166,4)/C(193,4) = 0,4555`), e os números do
+Shedinja de 156/194 a **155/193** e de 72/194 a **71/193**.
 
 
 ## 5. Próximos passos

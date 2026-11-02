@@ -66,15 +66,22 @@ def load_changelog(ids=GEN_3_MOVES) -> dict[str, list]:
     return history
 
 
+# O Struggle existe em Gen 3 mas **nao se aprende**: nao pode sair num
+# moveset meu nem nos 4 slots do adversario, logo nao pertence ao pool de
+# onde se sorteia. Estava la, e ainda por cima como NORMAL de 50 quando e
+# typeless -- quem precisa dele e o `stall.py`, com as suas constantes.
+NOT_LEARNABLE = frozenset({"struggle"})
+
+
 def load_moves(ids=GEN_3_MOVES) -> list[Move]:
     """Os moves utilizaveis do pool, ja filtrados pelo GRUPOS.md."""
-    return build_moves(
+    return [move for move in build_moves(
         moves=[r for r in load_table("moves") if int(r["id"]) in ids],
         types=load_table("types"),
         changelog=load_changelog(ids),
         drain=load_drain(ids),
         hits=load_hits(ids),
-    )
+    ) if move.name not in NOT_LEARNABLE]
 
 
 def load_upside(ids=GEN_3_MOVES) -> dict[str, Upside]:

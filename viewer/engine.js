@@ -395,7 +395,7 @@ export function worstMatchups(attacker, moves, pool, physicalTypes, threatMoves,
 const GUTS_ATTACK_FACTOR = 1.5;
 const RECOIL_FRACTION = 1 / 3;
 const BURN_RESIDUAL = 1 / 8;
-const STATUS_PER_MON = 0.2298;
+const STATUS_PER_MON = 0.2307;
 const ABILITY_TURNS = 3;        // upside.TURNS: duracao tipica de uma troca
 const ABILITY_MAX_TURNS = 4;    // battle.win_probability
 
