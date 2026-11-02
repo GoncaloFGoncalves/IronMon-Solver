@@ -79,7 +79,7 @@ Precisa de Python 3.12 e numpy.
 python -m mon.run --status      # quanto falta calcular
 python -m mon.run               # a camada 0; Ctrl+C a qualquer momento
 python -m mon.viewer            # reconstrói docs/index.html
-python -m pytest tests/         # 293 testes
+python -m pytest tests/         # 301 testes
 ```
 
 O batch leva cerca de 27 h e corre aos pedaços: cada partição escreve ao acabar e uma corrida nova
@@ -96,7 +96,7 @@ construída, em `docs/`.
 mon/             o solver
 viewer/          a página: template + motor de cálculo ao vivo
 docs/            a página construída, de onde o GitHub Pages a serve
-tests/           293 testes
+tests/           301 testes
 CONTEXT.md       especificação, decisões e bugs encontrados
 GRUPOS.md        composição dos grupos de moves e habilidades
 ```
@@ -120,7 +120,7 @@ Dentro do `mon/`:
   breakpoints.py o que me mata, por tipo
   matchups.py    o ranking por defensor
   gauntlet.py    a sala inteira antes do lider
-  stall.py       a parede do Shedinja, que se resolve a PP
+  stall.py       a parede do Shedinja: resolve-se a PP, e o slot dela decide
   run.py         a camada 0, retomável
   viewer.py      constrói docs/index.html
 ```

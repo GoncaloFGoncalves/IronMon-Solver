@@ -56,6 +56,11 @@ class Wall:
     their_damage: int   # dano base dele contra mim, por turno
     their_pp: int       # PP somado dos moves de dano dele
     struggle: int       # dano base do meu Struggle contra ele
+    their_struggle: int = 0   # o Struggle dele contra mim; 0 = igual ao dano
+
+    @property
+    def struggle_back(self) -> int:
+        return self.their_struggle or self.their_damage
 
 
 @dataclass(frozen=True)
@@ -84,7 +89,16 @@ def resolve(wall: Wall) -> Stall:
     # Os turnos em que levo dano: o PP que se esgota, mais o turno do Struggle.
     turns = min(wall.my_pp, wall.their_pp) + 1
 
-    died = probability_of_ko(wall.their_damage, wall.my_hp, turns)
+    if mine_first:
+        # Ele tem PP para todos os turnos: sao `turns` golpes normais dele.
+        died = probability_of_ko(wall.their_damage, wall.my_hp, turns)
+    else:
+        # O PP dele acaba antes: `their_pp` golpes normais, e depois um
+        # Struggle, que e um dano diferente. Convolui-se exacto em vez de
+        # fingir que o ultimo golpe e igual aos outros -- com `their_pp = 0`
+        # (sem moves de dano) e literalmente o unico golpe que levo.
+        died = _mixed_ko(wall.their_damage, wall.their_pp,
+                         wall.struggle_back, wall.my_hp)
     survival = 1.0 - died
     if survival <= 0.0:
         return Stall(0.0, 0.0, 0, turns, struggled)
@@ -93,14 +107,35 @@ def resolve(wall: Wall) -> Stall:
     # `vector.trade`: a distribuicao exacta sobre 60 turnos nao acrescenta
     # nada a uma consulta e custa a convolucao toda.
     from mon.damage import _hit_damages
-    mean_hit = sum(_hit_damages(wall.their_damage)) / 16
-    spent = turns * mean_hit
     if mine_first:
+        spent = turns * sum(_hit_damages(wall.their_damage)) / 16
         # O meu Struggle tambem me cobra: 1/4 do dano que causei.
         spent += wall.struggle * STRUGGLE_RECOIL
+    else:
+        spent = (wall.their_pp * sum(_hit_damages(wall.their_damage)) / 16
+                 + sum(_hit_damages(wall.struggle_back)) / 16)
     hp_left = max(0.0, wall.my_hp - spent)
     pp_left = 0 if mine_first else wall.their_pp - wall.my_pp
     return Stall(survival, hp_left, max(0, pp_left), turns, struggled)
+
+
+def _mixed_ko(damage: int, hits: int, last: int, hp: float) -> float:
+    """P(`hits` golpes de `damage` mais um de `last` somarem `hp` ou mais).
+
+    Exacto: convolui-se a distribuicao dos `hits` golpes com os 16 rolls do
+    ultimo. Com `hits = 0` reduz-se a um golpe so, que e o caso de um
+    adversario sem moves de dano.
+    """
+    from mon.damage import ROLLS, _hit_damages, _totals
+
+    tail = _hit_damages(last) if last > 0 else (0,)
+    if hits <= 0:
+        return sum(1 for value in tail if value >= hp) / len(tail)
+    totals = _totals(int(damage), hits)
+    span = len(ROLLS) ** hits * len(tail)
+    favourable = sum(count for total, count in totals
+                     for value in tail if total + value >= hp)
+    return favourable / span
 
 
 def no_coverage_chance(useless: int, pool: int, known: int) -> float:
@@ -113,3 +148,71 @@ def no_coverage_chance(useless: int, pool: int, known: int) -> float:
     if known > useless:
         return 0.0
     return comb(useless, known) / comb(pool, known)
+
+
+@dataclass(frozen=True)
+class PartyOutcome:
+    """O embate inteiro, com a parede num slot."""
+
+    survival: float          # P(chegar ao fim do treinador vivo)
+    struggling_after: int    # mons que enfrento depois, ja sem PP
+    hp_entering: float       # HP com que chego a parede
+    hp_left: float           # HP com que saio do treinador, se sair
+
+
+def party_outcome(wall_at: int, size: int, *, my_hp: int, my_pp: int,
+                  my_damage: int, my_speed: int, my_struggle: int,
+                  their_hp: int, their_damage: int, their_pp: int,
+                  their_struggle: int, other_hp: int, other_damage: int,
+                  other_speed: int) -> PartyOutcome:
+    """O desfecho de um treinador que tem a parede no slot `wall_at`.
+
+    A posicao muda tudo, e nos dois sentidos. Ao **slot 1** chego inteiro,
+    gasto o PP todo a resolver a parede, e faco os outros cinco a Struggle --
+    50 de power e 1/4 de recuo por golpe. Ao **slot 6** chego gasto, com
+    menos HP para aguentar os turnos do stall, mas nao sobra nada para lutar
+    depois.
+
+    Os mons que nao sao a parede sao todos iguais ao mediano: e a estrutura
+    que se quer ver, nao o numero exacto.
+    """
+    from mon.sequence import Fighter, State, run_section
+
+    if not 1 <= wall_at <= size:
+        raise ValueError("slot %r fora de uma equipa de %d" % (wall_at, size))
+
+    other = Fighter(damage=float(other_damage), hp=float(other_hp),
+                    speed=float(other_speed))
+    armed = Fighter(damage=float(my_damage), hp=float(my_hp),
+                    speed=float(my_speed), pp=my_pp)
+
+    before = run_section(armed, [other] * (wall_at - 1))
+    if not before.survival:
+        return PartyOutcome(0.0, size - wall_at, 0.0, 0.0)
+    hp_entering = before.expected_hp()
+    pp_entering = (min(s.pp for s in before.states) if before.states
+                   else my_pp)
+
+    wall = Wall(my_hp=int(hp_entering), my_pp=int(pp_entering),
+                their_hp=their_hp, their_damage=their_damage,
+                their_pp=their_pp, struggle=my_struggle,
+                their_struggle=their_struggle)
+    stalled = resolve(wall)
+    survival = before.survival * stalled.survival
+    if not survival:
+        return PartyOutcome(0.0, size - wall_at, hp_entering, 0.0)
+
+    rest = size - wall_at
+    if not rest:
+        return PartyOutcome(survival, 0, hp_entering, stalled.hp_left)
+
+    # Depois da parede o PP esta a zero: os que faltam fazem-se a Struggle,
+    # que custa 1/4 do dano causado a cada golpe.
+    struggling = Fighter(damage=float(my_struggle), hp=float(my_hp),
+                         speed=float(my_speed), recoil=STRUGGLE_RECOIL)
+    after = run_section(struggling, [other] * rest,
+                        State(hp=max(1.0, stalled.hp_left),
+                              pp=max(1, stalled.pp_left) if stalled.pp_left
+                              else 99))
+    return PartyOutcome(survival * after.survival, rest, hp_entering,
+                        after.expected_hp())

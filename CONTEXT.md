@@ -178,7 +178,7 @@ mon/
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          293 testes, todos verdes
+tests/          301 testes, todos verdes
 ```
 
 Notas:

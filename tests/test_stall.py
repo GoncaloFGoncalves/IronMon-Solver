@@ -12,6 +12,19 @@ def wall(**kwargs) -> Wall:
     base.update(kwargs)
     return Wall(**base)
 
+@pytest.fixture
+def party_pieces():
+    """Um embate de 6, com os cinco normais todos iguais ao mediano."""
+    return dict(
+        my_hp=200, my_pp=60, my_damage=70, my_speed=120,
+        my_struggle=40,
+        # `their_pp=10` de proposito: com os 60 de quatro moves o stall e
+        # impossivel em qualquer slot, e a posicao deixa de se ver. Com 10 o
+        # embate e ganhavel a cheio e perdido a meio -- que e o ponto.
+        their_hp=1, their_damage=10, their_pp=10, their_struggle=10,
+        other_hp=120, other_damage=18, other_speed=60,
+    )
+
 
 def test_struggle_in_gen_3_is_a_quarter_of_the_damage_dealt():
     # Nao do HP maximo -- isso e Gen 4 em diante. E e typeless desde Gen 2,
@@ -94,3 +107,79 @@ def test_no_coverage_chance_is_hypergeometric():
     assert no_coverage_chance(72, 194, 4) > no_coverage_chance(72, 194, 10)
     # Mais moves conhecidos que inuteis no pool: impossivel ficar sem nada.
     assert no_coverage_chance(3, 194, 10) == 0.0
+
+
+def test_a_wall_with_no_damaging_moves_costs_exactly_one_struggle():
+    # Bolas infinitas: se ele nao tem moves de dano, da Struggle no primeiro
+    # turno, leva 1/4 de recuo e morre. O custo e o dano de UM Struggle dele,
+    # nao de um ataque normal -- sao coisas diferentes.
+    out = resolve(wall(their_pp=0, their_damage=99, their_struggle=20))
+    assert out.survival == 1.0
+    assert out.turns == 1
+    assert out.struggled == "them"
+    # Perdi um Struggle dele (base 20, logo 17 a 20), nao os 99 do ataque
+    # que ele nao tem.
+    assert 200 - 21 <= out.hp_left <= 200 - 16
+
+
+def test_a_wall_with_no_damaging_moves_can_still_kill_a_weak_mon():
+    out = resolve(wall(my_hp=12, their_pp=0, their_struggle=40))
+    assert out.survival < 1.0
+
+
+def test_the_struggle_damage_defaults_to_their_normal_damage():
+    # Sem valor explicito assume-se o mesmo: e conservador e nao inventa.
+    a = resolve(wall(their_pp=0, their_damage=30))
+    b = resolve(wall(their_pp=0, their_damage=30, their_struggle=30))
+    assert a == b
+
+
+def test_the_wall_position_changes_the_outcome(party_pieces):
+    # A pergunta: o Shedinja ao slot 1 e ao slot 6 nao sao o mesmo embate.
+    from mon.stall import party_outcome
+    kit = party_pieces
+    primeiro = party_outcome(wall_at=1, size=6, **kit)
+    ultimo = party_outcome(wall_at=6, size=6, **kit)
+    assert primeiro.survival != ultimo.survival
+    # Ao slot 1 chego inteiro mas saio sem PP para os outros cinco; ao slot 6
+    # chego gasto mas nao sobra nada para lutar depois.
+    assert primeiro.struggling_after > 0
+    assert ultimo.struggling_after == 0
+
+
+def test_every_position_is_resolvable(party_pieces):
+    from mon.stall import party_outcome
+    kit = party_pieces
+    for slot in range(1, 7):
+        out = party_outcome(wall_at=slot, size=6, **kit)
+        assert 0.0 <= out.survival <= 1.0
+        assert out.struggling_after == 6 - slot
+
+
+def test_a_position_outside_the_party_is_an_error(party_pieces):
+    from mon.stall import party_outcome
+    kit = party_pieces
+    for slot in (0, 7):
+        with pytest.raises(ValueError):
+            party_outcome(wall_at=slot, size=6, **kit)
+
+
+def test_the_wall_is_survivable_only_in_the_last_slot(party_pieces):
+    # O resultado que surpreende: nao e o embate com a parede que mata, e o
+    # que vem depois. Ganha-se a parede e fica-se sem PP; os que faltam
+    # fazem-se a Struggle, com 1/4 de recuo por golpe, e isso mata.
+    from mon.stall import party_outcome
+    kit = party_pieces
+    por_slot = [party_outcome(wall_at=n, size=6, **kit).survival
+                for n in range(1, 7)]
+    assert por_slot[-1] > 0.5, por_slot
+    assert all(v == 0.0 for v in por_slot[:-1]), por_slot
+
+
+def test_a_lone_wall_is_won_whatever_the_slot(party_pieces):
+    # Com equipa de 1 nao ha "depois", logo o slot nao muda nada.
+    from mon.stall import party_outcome
+    kit = party_pieces
+    out = party_outcome(wall_at=1, size=1, **kit)
+    assert out.survival > 0.5
+    assert out.struggling_after == 0
