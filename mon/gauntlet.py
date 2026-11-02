@@ -34,6 +34,25 @@ GYM_AREAS = {
 }
 
 
+# As areas do mapa de cada seccao do `dungeons.py`. Os ginasios estao aqui
+# tambem, com a mesma grafia que o `GYM_AREAS` -- o mapa escreve "Fuschia" e
+# "Vermillion", e nao se corrige: e a chave dos dados.
+DUNGEON_AREAS = {
+    "pewter-gym": "Pewter Gym",
+    "cerulean-gym": "Cerulean Gym",
+    "ss-anne": "S.S. Anne",
+    "vermilion-gym": "Vermillion Gym",
+    "rocket-hideout": "Rocket Hideout",
+    "celadon-gym": "Celadon Gym",
+    "pokemon-tower": "Pokemon Tower",
+    "silph-co": "Silph Co",
+    "fuchsia-gym": "Fuschia Gym",
+    "saffron-gym": "Saffron Gym",
+    "cinnabar-gym": "Cinnabar Gym",
+    "viridian-gym": "Viridian Gym",
+}
+
+
 @dataclass(frozen=True)
 class Stage:
     """Um treinador da fila, com a equipa que poe."""
@@ -63,6 +82,29 @@ def leader_only(checkpoint: str, trainers) -> list[Stage]:
 
 def mon_count(stages) -> int:
     return sum(len(stage.levels) for stage in stages)
+
+
+def dungeon_mons(section: str, trainers) -> int:
+    """Quantos mons seguidos, sem cura, naquela seccao.
+
+    Num **ginasio** sao todos, por regra do desafio. Fora de um ginasio os
+    treinadores evitam-se, e o `dungeons.py` diz quantos embates a rota
+    obriga -- mas nao **quais**, logo o numero de mons estima-se pelo tamanho
+    medio de equipa daquela area. E estimativa, nos dois sentidos.
+    """
+    from mon.dungeons import mandatory_battles
+
+    if section not in DUNGEON_AREAS:
+        raise KeyError("seccao desconhecida: %s" % section)
+    area = DUNGEON_AREAS[section]
+    inside = [t for t in trainers if t.area == area]
+    if not inside:
+        raise KeyError("o mapa nao tem treinadores em %s" % area)
+    total = sum(len(t.levels) for t in inside)
+    if area in set(GYM_AREAS.values()):
+        return total
+    mean = total / len(inside)
+    return max(1, round(mandatory_battles(section) * mean))
 
 
 def gauntlet(checkpoint: str, trainers) -> list[int]:

@@ -177,7 +177,7 @@ mon/
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          253 testes, todos verdes
+tests/          265 testes, todos verdes
 ```
 
 Notas:
@@ -264,8 +264,9 @@ Notas:
   **O Guts quase não vale nada, e é um resultado, não uma limitação do modelo.** O status
   que o liga custa 1/8 do HP por turno e não há cura dentro da dungeon: o 1.5x paga o
   próprio custo. A `GUTS_WINDOW_TURNS = 8` (não 16 — burn e poison são ambos 1/8 em Gen 3)
-  e o `DUNGEON_SELF_STATUS = 0.25` descontam o resto, porque o status tem de ser *oferecido*
+  e o `guts_feasibility(mons)` descontam o resto, porque o status tem de ser *oferecido*
   pelo adversário: auto-inflingir exigiria itens ou um mon selvagem, os dois fora das regras.
+  E porque a mesma janela de 8 turnos que paga o 1.5x é a que mata numa fila longa — ver §3.5c.
 - **16 dos 207 moves batem mais do que uma vez por turno** e estavam a ser pontuados pelo BP de
   um golpe só. Com a truncagem a acontecer golpe a golpe (§4), isto não é um detalhe de escala:
 
@@ -650,6 +651,72 @@ Duas notas que caem deste esboço:
 - **A classe "altera o upside" não é independente do modelo de efeitos secundários.** Serene Grace
   dobra a probabilidade do cenário "esperado"; as abilities de imunidade a status anulam o upside
   de moves que dependem dele. Os dois sistemas têm de ser calculados juntos, não em sequência.
+
+### 3.5c Guts: o status que o habilita é o que o mata
+
+O `DUNGEON_SELF_STATUS = 0.25` era um palpite, e estava errado na **unidade**
+antes de estar errado no valor: era por dungeon, quando a quantidade é por
+mon adversário. Derivado do pool (há teste que o re-deriva):
+
+```
+dos 194 moves de dano, 27 dão status que o Guts aproveita (burn/poison/paralysis)
+  P(ter >=1 nos 4 slots)  = 1 - C(167,4)/C(194,4) = 0,4537
+  P(acertar em 3 turnos)  = média de 1-(1-c)^3    = 0,5065
+  --> STATUS_PER_MON = 0,2298
+```
+
+Mas usar `1-(1-p)^mons` como viabilidade — a hipótese de **chegar a ter**
+status — inverte o sinal do modelo. Burn e poison tiram 1/8 do HP por turno e
+dentro de uma dungeon não há cura: a janela são 8 turnos, ou ~2,7 mons.
+
+```
+queimado ao 1.º mon de uma fila de 6, sem OHKOs:
+  depois de 1 mon  ( 3 turnos):  62,5% do HP
+  depois de 2 mons ( 6 turnos):  25,0%
+  depois de 3 mons ( 9 turnos):  morto
+```
+
+Se o status cai no primeiro mon, morre-se em **11 das 12 secções** — só a
+S.S. Anne, com 2 mons, sobrevive. Logo a viabilidade é `P(o status cair tarde
+o suficiente para se chegar ao fim)`, e isso **decresce** com a fila:
+
+| secção | mons | P(ter status) | P(tarde o bastante) |
+|---|---|---|---|
+| ss-anne | 2 | 0,407 | **0,407** |
+| pewter-gym | 7 | 0,839 | 0,110 |
+| silph-co | 12 | 0,956 | 0,030 |
+| viridian-gym | 30 | 1,000 | **0,0003** |
+
+O status é **exógeno** — acontece com Guts ou sem ele — por isso a habilidade
+nunca é um passivo; o que ela não faz é salvar quem já morreu. Daí a
+viabilidade nunca ser negativa, só pequena.
+
+Fora dos ginásios o `dungeons.py` diz quantos embates a rota obriga mas não
+**quais**, logo os mons estimam-se por `embates × tamanho médio de equipa` da
+área. O `DEFAULT_MONS` é 7, a sala mais curta: um mon que só se aproveita numa
+fila longa não deve parecer bom por omissão.
+
+### 3.6g O limite de 6 turnos: decidido, e já implementado
+
+Fica em 6. Uma troca que não resolve em 6 turnos conta como **derrota**, e é
+o que o `vector.trade` já fazia: o `won` só acumula massa onde eu derrubo
+dentro da tabela. Não houve nada a mudar.
+
+O 4b resolveu a preocupação de caminho. Com o dano recebido a dobrar, os
+combates resolvem-se muito mais depressa — pares (move, defensor) com massa
+não resolvida acima de 1%:
+
+```
+brock 0,0%   misty 0,4%   erika 1,8%   koga 0,1%   elite-4 0,0%
+```
+
+Eram 221-307 por checkpoint com o golpe neutro de 80. Ressalva: na Erika a
+justificação ("6 turnos sem resolver = estou a um cabelo de morrer") é a que
+menos se aplica — lá é impasse por estar 22 níveis acima, não por estar a
+morrer. Mas contar como derrota **subestima**, e é 1,8% num checkpoint onde o
+`win` já é 0,964. Nos dois sítios onde se perde é zero.
+
+---
 
 ### 3.6 Score — desfecho da batalha, por distribuições
 
@@ -1203,8 +1270,9 @@ pontos onde o modelo pode ficar melhor, e os sítios onde assumi um valor em vez
 1. **As chances de efeito do `move_meta` são modernas** e não há `move_changelog` para elas, logo
    não há como as reverter para Gen 3 a partir dos dados. Ficam por verificar. Quinta instância
    da armadilha.
-2. Calibração do `DUNGEON_SELF_STATUS = 0.25` e **verificação em jogo das contagens do
-   `dungeons.py`** — são estimativa de FRLG, não dados medidos.
+2. **Verificação em jogo das contagens do `dungeons.py`** — os embates obrigatórios fora dos
+   ginásios são estimativa de FRLG, não dados medidos, e é deles que sai o número de mons de
+   cada secção (§3.5c). Dentro dos ginásios já não há estimativa: contam todos, por regra.
 3. **Atacante de referência** para o teste de glass cannon (§3.8): nível e stats. Não bloqueia o
    cálculo, só a etiquetagem — decide-se melhor depois de ver a distribuição.
 4. **Critério de S/A/B por arquétipo** além dos percentis (durável, dano alto e lento). Idem.

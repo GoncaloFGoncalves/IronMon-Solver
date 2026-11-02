@@ -1,5 +1,5 @@
 from mon.abilities import (
-    DUNGEON_SELF_STATUS,
+    STATUS_PER_MON,
     GUTS_WINDOW_TURNS,
     MonContext,
     swing,
@@ -45,10 +45,11 @@ def test_guts_only_helps_a_physical_moveset():
 
 def test_dungeon_rules_cut_the_value_of_guts():
     # Nao se pode auto-infligir status numa dungeon (nem cura, nem mons
-    # selvagens), logo o swing bruto do Guts e inaproveitavel na maior parte.
+    # selvagens): o status tem de vir do adversario, logo o swing bruto do
+    # Guts e descontado pela hipotese de algum lho oferecer.
     ctx = contexto(physical=True)
     assert 0 < utilization("guts", ctx) < swing("guts", ctx)
-    assert DUNGEON_SELF_STATUS < 1.0
+    assert STATUS_PER_MON < 1.0
 
 
 def test_the_guts_window_is_eight_turns():

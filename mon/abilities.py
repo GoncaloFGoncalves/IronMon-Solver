@@ -27,8 +27,18 @@ GUTS_WINDOW_TURNS = int(1 / BURN_RESIDUAL)
 
 # O status que o Guts precisa tem de ser oferecido pelo adversario: auto-
 # inflingir obrigaria a itens ou a um mon selvagem, os dois fora das regras
-# dentro de uma dungeon. Valor a calibrar em jogo (CONTEXT.md 6).
-DUNGEON_SELF_STATUS = 0.25
+# dentro de uma dungeon.
+#
+# Por **mon adversario**, derivado do pool e nao estimado: dos 194 moves de
+# dano, 27 dao um status que o Guts aproveita (burn, poison, paralysis).
+#
+#   P(ter >=1 nos 4 slots)  = 1 - C(167,4)/C(194,4) = 0.4537
+#   P(acertar em 3 turnos)  = media de 1-(1-c)^3    = 0.5065
+#
+# Ha teste que re-deriva este numero dos dados. O 0.25 que aqui estava era um
+# palpite e calhou perto -- mas era por **dungeon**, nao por mon, e e nisso
+# que estava errado: numa fila de 20 mons o status e praticamente certo.
+STATUS_PER_MON = 0.2298
 
 
 @dataclass(frozen=True)
@@ -78,7 +88,49 @@ _EFFECTS = {
     "rock-head": _rock_head,
 }
 
-_FEASIBILITY = {"guts": DUNGEON_SELF_STATUS}
+def self_status(mons: int) -> float:
+    """P(chegar a ter status) ao longo de uma dungeon de `mons` adversarios.
+
+    Satura depressa: 7 mons (o ginasio do Brock) dao 0.84 e 20 dao 0.995. Um
+    valor fixo por dungeon dava ao Guts o mesmo valor numa sala de 2 e numa
+    de 30, e a diferenca e entre valer um quarto e valer tudo.
+    """
+    if mons < 1:
+        raise ValueError("uma dungeon tem pelo menos 1 mon, veio %r" % mons)
+    return 1 - (1 - STATUS_PER_MON) ** mons
+
+
+def guts_feasibility(mons: int) -> float:
+    """P(apanhar status **e** chegar vivo ao fim da seccao para o aproveitar).
+
+    Nao e o mesmo que `self_status`, e a diferenca e o ponto todo. O burn e o
+    poison tiram 1/8 do HP por turno e dentro de uma dungeon nao ha cura: se
+    o status cai ao primeiro de seis mons, morre-se ao terceiro. A janela sao
+    8 turnos, ou seja ~2.7 mons, logo o status tem de cair **no fim** da fila.
+
+    Por isso isto **decresce** com o tamanho da seccao -- de 0.41 numa fila de
+    2 para 0.0003 no ginasio do Viridian. O `self_status` cresce, e usa-lo
+    como viabilidade dizia que o Guts era melhor na fila longa.
+
+    O status e **exogeno**: acontece com Guts ou sem ele, logo a habilidade
+    nunca e um passivo. O que ela nao faz e salvar quem ja morreu.
+    """
+    if mons < 1:
+        raise ValueError("uma dungeon tem pelo menos 1 mon, veio %r" % mons)
+    from mon.upside import TURNS
+    total = 0.0
+    for first in range(1, mons + 1):
+        # Sobram estes mons para aguentar com o status em cima, o proprio
+        # incluido; se a conta do residual passa de 1, nao se chega ao fim.
+        remaining = (mons - first + 1) * TURNS
+        if remaining * BURN_RESIDUAL < 1:
+            total += (1 - STATUS_PER_MON) ** (first - 1) * STATUS_PER_MON
+    return total
+
+
+# Habilidades cuja viabilidade depende do tamanho da dungeon. As que nao
+# estao aqui valem 1: a mecanica aplica-se ou nao, e nao espera por nada.
+_FEASIBILITY = {"guts": guts_feasibility}
 
 
 def swing(ability: str, ctx: MonContext) -> float:
@@ -99,6 +151,18 @@ def swing(ability: str, ctx: MonContext) -> float:
     return win_probability(*altered) - win_probability(ctx.me, ctx.them)
 
 
-def utilization(ability: str, ctx: MonContext) -> float:
-    """O swing descontado da acessibilidade da condicao dentro da dungeon."""
-    return swing(ability, ctx) * _FEASIBILITY.get(ability, 1.0)
+DEFAULT_MONS = 7   # a sala do Brock, a mais curta das doze
+
+
+def utilization(ability: str, ctx: MonContext, mons: int = DEFAULT_MONS) -> float:
+    """O swing descontado da acessibilidade da condicao dentro da dungeon.
+
+    `mons` e o numero de adversarios seguidos da seccao -- de 7 (Pewter) a 30
+    (Viridian), pelo `gauntlet.dungeon_mons`. O valor por omissao e o mais
+    curto, que e o desconto maior: um mon que so se aproveita numa fila longa
+    nao devia parecer bom por omissao.
+    """
+    feasibility = _FEASIBILITY.get(ability)
+    if feasibility is None:
+        return swing(ability, ctx)
+    return swing(ability, ctx) * feasibility(mons)
