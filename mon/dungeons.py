@@ -12,6 +12,9 @@ os evitar e chegar ao checkpoint seguinte a um nivel mais baixo.
 lutar com todos. Nao e uma inferencia do mapa -- e uma regra, e por isso nao
 depende de o treinador ser spinner ou estatico.
 
+**O Elite 4 tambem e uma dungeon**, e a mais longa: cinco treinadores de
+seguida sem cura pelo meio. Nao se contorna nenhum.
+
 Os numeros sao estimativa de FRLG e estao por verificar em jogo (CONTEXT.md 6).
 
 **Para os ginasios isto esta superado pelo `gauntlet.py`**, que conta mons em
@@ -42,6 +45,10 @@ DUNGEONS = (
     Dungeon("saffron-gym", 8, "7 treinadores e a Sabrina"),
     Dungeon("cinnabar-gym", 8, "7 treinadores e o Blaine; o quiz nao dispensa ninguem"),
     Dungeon("viridian-gym", 9, "8 treinadores e o Giovanni -- 30 mons seguidos"),
+    # A fila mais longa do jogo, e a unica que nao sai do mapa: o
+    # FRLGIronmonMap tem a Victory Road mas nao os cinco do Elite 4.
+    Dungeon("elite-4", 5, "Lorelei, Bruno, Agatha, Lance e o Campeao -- "
+                          "30 mons seguidos, sem cura entre eles"),
 )
 
 _BY_NAME = {d.name: d for d in DUNGEONS}

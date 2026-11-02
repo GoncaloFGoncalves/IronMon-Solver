@@ -15,9 +15,18 @@ def trainers():
 
 def test_every_dungeon_section_has_a_mon_count(trainers):
     from mon.dungeons import DUNGEONS
-    assert set(DUNGEON_AREAS) == {d.name for d in DUNGEONS}
-    for section in DUNGEON_AREAS:
+    sections = {d.name for d in DUNGEONS}
+    for section in sections:
         assert dungeon_mons(section, trainers) >= 1
+
+
+def test_the_elite_four_is_the_one_section_without_a_map_area(trainers):
+    # O FRLGIronmonMap tem a Victory Road e nao tem os cinco do Elite 4, logo
+    # a contagem dele e dada em vez de derivada -- e e a unica assim.
+    from mon.dungeons import DUNGEONS
+    sections = {d.name for d in DUNGEONS}
+    assert sections - set(DUNGEON_AREAS) == {"elite-4"}
+    assert dungeon_mons("elite-4", trainers) == 30
 
 
 def test_a_gym_counts_its_whole_room(trainers):

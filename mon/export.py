@@ -62,7 +62,8 @@ def build_payload(root, checkpoints=SPLITS) -> dict:
                 if "risk" in row:
                     risk[index] = round(row["risk"] * SCALE)
                 per_species[row["species"] - 1] = row["known"]
-        meta.append({"name": checkpoint, "level": level, "opponent": opponent})
+        meta.append({"name": checkpoint, "level": level, "opponent": opponent,
+                     "mons": _mons(checkpoint)})
         known.append(per_species)
 
     return {
@@ -78,6 +79,16 @@ def build_payload(root, checkpoints=SPLITS) -> dict:
         "hp": base64.b64encode(hp.tobytes()).decode(),
         "risk": base64.b64encode(risk.tobytes()).decode(),
     }
+
+
+def _mons(checkpoint: str) -> int:
+    """Mons seguidos sem cura naquela seccao -- o relogio do status.
+
+    Vai no payload porque a pagina nao tem os treinadores do mapa.
+    """
+    from mon.gauntlet import checkpoint_mons
+    from mon.trainers import load_trainers
+    return checkpoint_mons(checkpoint, load_trainers())
 
 
 def _threat(checkpoint: str) -> dict:

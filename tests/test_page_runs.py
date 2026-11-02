@@ -21,7 +21,8 @@ class El {
   constructor(tag) {
     this.tagName = (tag || "div").toUpperCase();
     this.children = []; this.dataset = {}; this.style = {}; this.classList = {
-      toggle: () => {}, add: () => {}, contains: () => false };
+      toggle: () => {}, add: () => {}, remove: () => {},
+      contains: () => false };
     this._text = ""; this.className = ""; this.hidden = false; this.options = [];
   }
   set textContent(v) { this._text = String(v); this.children = []; }
@@ -59,7 +60,9 @@ globalThis.atob = (s) => Buffer.from(s, "base64").toString("binary");
 globalThis.window = globalThis;
 globalThis.__rows = (id) => {
   const el = REG.get(id);
-  return el ? el.children.length : -1;
+  // Um elemento que ninguem tocou ainda nao tem linhas, que e zero -- nao e
+  // um erro: e o estado antes de o painel calcular.
+  return el ? el.children.length : 0;
 };
 """
 
@@ -124,9 +127,28 @@ def test_the_wounded_slider_makes_more_types_lethal(script, tmp_path):
     assert got["ferido"] > got["cheio"], got
 
 
+def test_the_custom_panel_waits_for_the_button(script, tmp_path):
+    # Os nove checkpoints custam ~0.43 s: nada corre sozinho.
+    got = _run(script, textwrap.dedent("""
+        init();
+        const antes = __rows("cuBody");
+        const aviso = document.getElementById("cuStale").textContent;
+        renderCustom();
+        console.log(JSON.stringify({
+          antes, aviso, depois: __rows("cuBody"),
+          limpo: document.getElementById("cuStale").textContent,
+        }));
+    """), tmp_path)
+    assert got["antes"] == 0, got
+    assert got["aviso"], "tem de avisar que ha mudancas por calcular"
+    assert got["depois"] == 9, got
+    assert got["limpo"] == "", got
+
+
 def test_the_custom_panel_draws_the_whole_run(script, tmp_path):
     got = _run(script, textwrap.dedent("""
         init();
+        renderCustom();
         console.log(JSON.stringify({
           linhas: __rows("cuBody"),
           sliders: __rows("cuSliders"),
@@ -136,6 +158,25 @@ def test_the_custom_panel_draws_the_whole_run(script, tmp_path):
     assert got["linhas"] == 9, got
     assert got["sliders"] == 6, got
     assert "desalinhado" not in got["orcamento"], got["orcamento"]
+
+
+def test_the_sliders_only_mark_stale(script, tmp_path):
+    got = _run(script, textwrap.dedent("""
+        init();
+        renderCustom();
+        const depois = __rows("cuBody");
+        state.custom.bases[1] += 10;
+        fixBudget(1);
+        markStale();
+        console.log(JSON.stringify({
+          depois, aviso: document.getElementById("cuStale").textContent,
+          linhas: __rows("cuBody"),
+        }));
+    """), tmp_path)
+    assert got["depois"] == 9
+    assert got["aviso"], got
+    # A tabela antiga fica no ecra, nao se apaga: so deixa de estar actual.
+    assert got["linhas"] == 9, got
 
 
 def test_the_sliders_always_preserve_the_bst(script, tmp_path):
@@ -183,16 +224,28 @@ def test_the_presets_land_on_the_grid_profiles(script, tmp_path):
 def test_the_ability_column_only_fills_when_one_is_chosen(script, tmp_path):
     got = _run(script, textwrap.dedent("""
         init();
-        const coluna = () => document.getElementById("cuBody")
-          .children[0].children[5].textContent;
-        const sem = coluna();
+        renderCustom();
+        // A coluna da ability e a ultima; antes dela esta a dos mons.
+        const linha = (cp) => document.getElementById("cuBody").children[cp];
+        const ability = (cp) => linha(cp).children[6].textContent;
+        const mons = (cp) => linha(cp).children[5].textContent;
+        const sem = ability(0);
         state.custom.ability = "guts";
         renderCustom();
-        const com = coluna();
-        console.log(JSON.stringify({ sem, com }));
+        console.log(JSON.stringify({
+          sem, brock: ability(0), elite: ability(8),
+          monsBrock: mons(0), monsElite: mons(8),
+        }));
     """), tmp_path)
     assert got["sem"] == "\u2014", got
-    assert got["com"].startswith("+"), got
+    # O rel\u00f3gio do status \u00e9 por checkpoint: 7 mons no Brock, 30 no Elite 4.
+    # 30 mons s\u00e3o ~90 turnos de burn, logo ali o Guts n\u00e3o vale nada.
+    assert got["monsBrock"] == "7" and got["monsElite"] == "30", got
+    brock = float(got["brock"][1:])
+    elite = 0.0 if got["elite"] == "\u2014" else float(got["elite"][1:])
+    assert brock > 0.01, got
+    assert elite < 0.001, got
+    assert brock / max(elite, 1e-12) > 50, got
 
 
 def test_the_sampling_stride_is_coprime_with_the_profile_count(script, tmp_path):

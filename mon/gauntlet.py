@@ -53,6 +53,15 @@ DUNGEON_AREAS = {
 }
 
 
+# O Elite 4 **e** uma dungeon -- a mais longa, cinco treinadores sem cura
+# pelo meio -- mas e a unica que nao sai do mapa: o FRLGIronmonMap tem a
+# Victory Road (45 mons, com o Pokemon Center do Plateau a seguir) e nao tem
+# os cinco do Elite 4. Logo o numero e **dado**, nao derivado dos dados:
+# 5 treinadores x 6 mons. Verificar em jogo (CONTEXT.md 5).
+ELITE_FOUR_MONS = 30
+ELITE_FOUR_BATTLES = 5
+
+
 @dataclass(frozen=True)
 class Stage:
     """Um treinador da fila, com a equipa que poe."""
@@ -84,16 +93,35 @@ def mon_count(stages) -> int:
     return sum(len(stage.levels) for stage in stages)
 
 
+def checkpoint_mons(checkpoint: str, trainers) -> int:
+    """Mons seguidos, sem cura, na seccao daquele checkpoint.
+
+    E o denominador do relogio do status: o burn tira 1/8 do HP por turno e
+    nao ha cura, logo o que importa nao e o checkpoint em si mas o tamanho da
+    fila que ele obriga a fazer de uma vez.
+    """
+    from mon.trainers import SPLITS
+
+    if checkpoint not in SPLITS:
+        raise KeyError("checkpoint desconhecido: %s" % checkpoint)
+    if checkpoint == "elite-4":
+        return dungeon_mons("elite-4", trainers)
+    return mon_count(stages_of(checkpoint, trainers))
+
+
 def dungeon_mons(section: str, trainers) -> int:
     """Quantos mons seguidos, sem cura, naquela seccao.
 
-    Num **ginasio** sao todos, por regra do desafio. Fora de um ginasio os
-    treinadores evitam-se, e o `dungeons.py` diz quantos embates a rota
-    obriga -- mas nao **quais**, logo o numero de mons estima-se pelo tamanho
-    medio de equipa daquela area. E estimativa, nos dois sentidos.
+    Num **ginasio** sao todos, por regra do desafio, e no **Elite 4** tambem.
+    Fora disso os treinadores evitam-se, e o `dungeons.py` diz quantos
+    embates a rota obriga -- mas nao **quais**, logo o numero de mons
+    estima-se pelo tamanho medio de equipa daquela area. E estimativa, nos
+    dois sentidos.
     """
     from mon.dungeons import mandatory_battles
 
+    if section == "elite-4":
+        return ELITE_FOUR_MONS
     if section not in DUNGEON_AREAS:
         raise KeyError("seccao desconhecida: %s" % section)
     area = DUNGEON_AREAS[section]

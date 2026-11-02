@@ -321,6 +321,10 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
     </div>
     <div class="budget" id="cuBudget"></div>
     <div class="sliders" id="cuSliders"></div>
+    <div class="actions">
+      <button type="button" class="go" id="cuRun">Calcular</button>
+      <span class="stale" id="cuStale"></span>
+    </div>
     <div class="seg presets" id="cuPresets">
       <button type="button" data-preset="hybrid">híbrido</button>
       <button type="button" data-preset="physical">físico</button>
@@ -329,7 +333,7 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
       <button type="button" data-preset="fast">rápido</button>
     </div>
     <div class="scroll"><table>
-      <thead><tr><th>Checkpoint</th><th class="num">Nível</th><th class="num">Vitória</th><th class="num">HP</th><th class="num">Risco</th><th class="num">Ability</th></tr></thead>
+      <thead><tr><th>Checkpoint</th><th class="num">Nível</th><th class="num">Vitória</th><th class="num">HP</th><th class="num">Risco</th><th class="num">Mons</th><th class="num">Ability</th></tr></thead>
       <tbody id="cuBody"></tbody>
     </table></div>
     <div class="timing" id="cuTime"></div>
@@ -378,6 +382,12 @@ footer code { font-family: var(--mono); font-size: 11px; color: var(--fg-faint);
 .budget { font-size: 12px; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
 .budget.over { color: var(--bad, #c5503f); }
 .presets { margin-bottom: 10px; }
+.actions { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.actions .go { padding: 6px 16px; font: inherit; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel, transparent); color: var(--fg); }
+.actions .go.ready { border-color: var(--accent); color: var(--accent); }
+.actions .stale { font-size: 12px; color: var(--fg-dim); }
 @media (max-width: 560px) { .sliders { grid-template-columns: 1fr; } }
 .hpbox { margin-bottom: 10px; }
 .hpbox input[type=range] { width: 100%; }
@@ -781,9 +791,11 @@ const PRESET_PROFILE = {
   bulky: ["hybrid", "def_tank", "bulky"],
   fast: ["hybrid", "hybrid", "fast"],
 };
-// A sala mais curta das doze (Pewter, 7 mons): o desconto maior. Um mon que
-// so se aproveita numa fila longa nao deve parecer bom por omissao.
-const CUSTOM_MONS = 7;
+/* Os mons seguidos sem cura de cada checkpoint: 7 no Brock, 30 no Elite 4
+   (5 treinadores x 6). E o relogio do status, e usar um numero so para todos
+   dava ao Guts +0.41 no Elite 4 quando ali ele nao vale nada -- 30 mons sao
+   ~90 turnos e o burn tira 1/8 por turno. */
+const MONS = CPS.map(cp => cp.mons);
 
 const customBst = () => DATA.species[state.custom.s][3];
 
@@ -819,11 +831,11 @@ function fixBudget(moved) {
   }
 }
 
-let customTimer = null;
-
-function queueCustom() {
-  if (customTimer !== null) clearTimeout(customTimer);
-  customTimer = setTimeout(() => { customTimer = null; renderCustom(); }, 120);
+/* Nada corre sozinho: os nove checkpoints custam ~0.43 s e ninguem quer
+   isso a cada pixel de slider. Mexe-se tudo, carrega-se em Calcular. */
+function markStale() {
+  $("cuStale").textContent = "ha mudancas por calcular";
+  $("cuRun").classList.add("ready");
 }
 
 function buildSliders() {
@@ -847,9 +859,7 @@ function buildSliders() {
       state.custom.bases[i] = +e.target.value;
       fixBudget(i);
       buildSliders();
-      // Os numeros chegam quando se para de arrastar: a 0.5 s por render,
-      // recalcular a cada pixel punha a pagina a arrastar-se.
-      queueCustom();
+      markStale();
     };
     wrap.append(label, slider, value);
     host.append(wrap);
@@ -916,7 +926,7 @@ function customAttacker(cp) {
  * vitoria: a camada 0 nao tem abilities, e somar tornava os dois numeros
  * incomparaveis.
  */
-function abilityFor(attacker, pool, profile, chosen) {
+function abilityFor(attacker, pool, profile, chosen, cp) {
   if (!state.custom.ability) return null;
   let total = 0;
   let contested = 0;
@@ -943,7 +953,7 @@ function abilityFor(attacker, pool, profile, chosen) {
       physical: chosen.some(m => PHYSICAL.has(m.type)),
       incomingPhysical: !!them.physical,
       recoil: false,
-    }, CUSTOM_MONS);
+    }, MONS[cp]);
   }
   return contested ? { swing: total / contested, contested } : null;
 }
@@ -958,6 +968,8 @@ function renderCustom() {
   const body = $("cuBody");
   body.innerHTML = "";
   if (!chosen.length) return;
+  $("cuStale").textContent = "";
+  $("cuRun").classList.remove("ready");
   const started = performance.now();
 
   for (let cp = 0; cp < CPS.length; cp++) {
@@ -965,7 +977,7 @@ function renderCustom() {
     const pool = customPool(cp);
     const profile = customProfileFor(cp, attacker, pool);
     const r = scoreMoveset(attacker, chosen, pool, PHYSICAL, MOVES, profile);
-    const ability = abilityFor(attacker, pool, profile, chosen);
+    const ability = abilityFor(attacker, pool, profile, chosen, cp);
 
     const tr = document.createElement("tr");
     const name = cell(CPS[cp].name);
@@ -983,7 +995,7 @@ function renderCustom() {
     const risk = cell(undefined, "num");
     risk.append(pill(Math.round(r.risk * SCALE), "risk"));
     tr.append(name, cell(CPS[cp].level + " vs " + CPS[cp].opponent, "num"),
-              win, hp, risk,
+              win, hp, risk, cell(MONS[cp], "num"),
               cell(ability ? "+" + ability.swing.toFixed(4) : "—", "num"));
     body.append(tr);
   }
@@ -1064,7 +1076,7 @@ function render() {
   renderPick();
   renderMoveset();
   renderBreak();
-  renderCustom();
+  markStale();
 }
 
 function init() {
@@ -1099,21 +1111,20 @@ function init() {
     state.custom.s = +e.target.value;
     state.custom.bases = null;
     buildSliders();
-    renderCustom();
+    markStale();
   };
-  $("cuBand").onchange = (e) => {
-    state.custom.band = +e.target.value;
-    renderCustom();
-  };
-  $("cuAbility").onchange = (e) => {
-    state.custom.ability = e.target.value;
-    renderCustom();
-  };
+  $("cuBand").onchange = (e) => { state.custom.band = +e.target.value; markStale(); };
+  $("cuAbility").onchange = (e) => { state.custom.ability = e.target.value; markStale(); };
   $("cuPresets").onclick = (e) => {
     const button = e.target.closest("button[data-preset]");
     if (!button) return;
     loadPreset(button.dataset.preset);
     buildSliders();
+    markStale();
+  };
+  $("cuRun").onclick = () => {
+    $("cuStale").textContent = "";
+    $("cuRun").classList.remove("ready");
     renderCustom();
   };
   $("bpHp").oninput = (e) => { state.bpHp = +e.target.value; renderBreak(); };

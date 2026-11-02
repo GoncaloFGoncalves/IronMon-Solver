@@ -24,9 +24,13 @@ calcula um moveset específico na hora, contra os mesmos 10 422 adversários: ~7
 slot, ~395 ms a trocar de mon. Serve para perguntar "e se ele tiver giga-drain em vez de surf".
 
 **Testar um mon** — escolhes a espécie, distribuis o BST pelos seis stats com sliders, pões uma
-ability, e vês a run inteira. O randomizer não dá 27 distribuições: dá uma qualquer que preserva
-o BST, e os 27 perfis são a grelha do modelo, não o que sai no jogo. ~430 ms para os nove
-checkpoints.
+ability, e carregas em **Calcular**. O randomizer não dá 27 distribuições: dá uma qualquer que
+preserva o BST, e os 27 perfis são a grelha do modelo, não o que sai no jogo. ~450 ms para os
+nove checkpoints, e nada corre até pedires.
+
+A coluna **Mons** é o tamanho da fila sem cura de cada secção — 7 no Brock, 30 no Elite 4 — e é
+o que decide se uma ability como o Guts vale algo: o burn tira 1/8 do HP por turno, logo numa
+fila de 30 o status é uma sentença e não uma vantagem.
 
 **O que me mata** — por tipo, os moves ordenados por dano até ao degrau onde a morte deixa de
 ser certa, com um cursor para perguntar a HP ferido em vez de a HP cheio.
@@ -75,7 +79,7 @@ Precisa de Python 3.12 e numpy.
 python -m mon.run --status      # quanto falta calcular
 python -m mon.run               # a camada 0; Ctrl+C a qualquer momento
 python -m mon.viewer            # reconstrói docs/index.html
-python -m pytest tests/         # 274 testes
+python -m pytest tests/         # 283 testes
 ```
 
 O batch leva cerca de 27 h e corre aos pedaços: cada partição escreve ao acabar e uma corrida nova
@@ -92,7 +96,7 @@ construída, em `docs/`.
 mon/             o solver
 viewer/          a página: template + motor de cálculo ao vivo
 docs/            a página construída, de onde o GitHub Pages a serve
-tests/           274 testes
+tests/           283 testes
 CONTEXT.md       especificação, decisões e bugs encontrados
 GRUPOS.md        composição dos grupos de moves e habilidades
 ```

@@ -177,7 +177,7 @@ mon/
 viewer/
   template.html a pagina                                     ranking + lookup + ao vivo
   engine.js     port do kernel para JS                       movesets concretos, <20 ms
-tests/          274 testes, todos verdes
+tests/          283 testes, todos verdes
 ```
 
 Notas:
@@ -1121,11 +1121,12 @@ habilidade pode mexer. Numa consulta não há essa restrição, e medindo nos
 | brock | 70 | **+0,370** |
 | koga | 2 | +0,082 |
 | giovanni | 5 | +0,243 |
-| elite-4 | 27 | **+0,406** |
+| elite-4 | 27 | +0,406 |
 | os outros 5 | 0 | — |
 
-A habilidade só pesa onde a run se decide, e é zero nos cinco checkpoints do
-meio. Fica numa coluna sua e não somada à vitória: a camada 0 não tem
+*Estes números usavam o mesmo relógio de 7 mons em todos os checkpoints, e é
+errado — ver §3.9c.* A habilidade só pesa onde há combates disputados, e é
+zero nos cinco checkpoints do meio. Fica numa coluna sua e não somada à vitória: a camada 0 não tem
 abilities, e somar tornava os dois números incomparáveis.
 
 **2. Dois bugs no port JS que os testes diferenciais não tinham apanhado**,
@@ -1148,6 +1149,49 @@ O perfil de dano recebido está em cache por `(checkpoint, tipos, Def, SpD)` —
 não depende do HP, do Atk, do SpA nem da Speed. Não chega para o arrastar,
 porque preservar o BST faz o slider do Atk tirar pontos ao Def; daí o
 debounce de 120 ms.
+
+---
+
+### 3.9c O relógio do status é por checkpoint, não um número só
+
+O painel usava `CUSTOM_MONS = 7` — a sala do Brock — para os nove
+checkpoints. Com isso o Guts aparecia a valer **+0,406 no Elite 4**, que é
+onde ele vale menos: cinco treinadores de seguida, 30 mons, e mesmo com OHKO
+em tudo são 30 turnos de burn, quase quatro vezes o HP máximo.
+
+Agora cada checkpoint leva a sua fila, e a diferença é de duas ordens de
+grandeza:
+
+| checkpoint | mons | P(Guts aproveitável) |
+|---|---|---|
+| brock | 7 | **0,1103** |
+| misty | 8 | 0,0849 |
+| surge | 11 | 0,0388 |
+| erika | 24 | 0,0013 |
+| giovanni | 30 | 0,0003 |
+| elite-4 | 30 | **0,0003** |
+
+A coluna da ability no painel passou de +0,406 para **+0,0001** no Elite 4.
+
+**O Elite 4 é uma dungeon como as outras**, e a mais longa — mas é a única
+cuja contagem não sai dos dados: o FRLGIronmonMap tem a Victory Road (45 mons,
+com o Pokémon Center do Plateau a seguir) e não tem os cinco do Elite 4. O
+número é **dado**, 5 treinadores × 6 mons, e está marcado como tal; é o
+primeiro item a verificar em jogo (§5).
+
+### 3.9d Nada corre sozinho
+
+Os nove checkpoints custam ~0,45 s. Mexer os sliders, trocar de espécie, de
+IV ou de ability marca o painel como desactualizado e espera pelo botão
+**Calcular**. A tabela antiga fica no ecrã em vez de se apagar: continua a
+ser a resposta a uma pergunta válida, só não à que está nos controlos.
+
+```
+primeira render     511 ms
+repetida             28 ms   (cache)
+com ability          42 ms
+mexer um slider     448 ms
+```
 
 ---
 
@@ -1324,7 +1368,10 @@ pontos onde o modelo pode ficar melhor, e os sítios onde assumi um valor em vez
 1. **As chances de efeito do `move_meta` são modernas** e não há `move_changelog` para elas, logo
    não há como as reverter para Gen 3 a partir dos dados. Ficam por verificar. Quinta instância
    da armadilha.
-2. **Verificação em jogo das contagens do `dungeons.py`** — os embates obrigatórios fora dos
+2. **A contagem do Elite 4** (`gauntlet.ELITE_FOUR_MONS = 30`) é a única que não
+   sai do mapa — 5 treinadores × 6 mons, dado e não derivado. É de lá que sai o
+   relógio do status no checkpoint que mais importa (§3.9c).
+3. **Verificação em jogo das contagens do `dungeons.py`** — os embates obrigatórios fora dos
    ginásios são estimativa de FRLG, não dados medidos, e é deles que sai o número de mons de
    cada secção (§3.5c). Dentro dos ginásios já não há estimativa: contam todos, por regra.
 3. **Atacante de referência** para o teste de glass cannon (§3.8): nível e stats. Não bloqueia o
